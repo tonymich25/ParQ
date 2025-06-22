@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 
 from flask import Blueprint, render_template, flash, redirect, url_for, session, request
 from flask_login import login_user, logout_user, login_required, current_user
@@ -26,7 +26,7 @@ def registration():
         #                                                                                          request.remote_addr))
         # Flash error message
         flash('You are already logged in.', 'info')
-        return redirect(url_for('posts.posts'))
+        return redirect(url_for('dashboard.dashboard'))
 
 
     form = RegistrationForm()
@@ -50,6 +50,8 @@ def registration():
         db.session.add(new_user)
         db.session.commit()
 
+        new_user.generate_log()
+
         #log_security_event(new_user, "REGISTER", "Successful Registration", "INFO")
 
         return redirect(url_for('accounts.login'))
@@ -70,7 +72,7 @@ def login():
         #                                                                                          request.remote_addr))
         # Flash error message
         flash('You are already logged in.', 'info')
-        return redirect(url_for('posts.posts'))
+        return redirect(url_for('dashboard.dashboard'))
 
 
     form = LoginForm()
@@ -94,33 +96,25 @@ def login():
         if user and user.check_password(form.password.data):
             session['attempts'] = 0  # Reset attempts on successful login
             login_user(user)
-            # Editing the user log for login dates and IP addresses.
-            user.log.previouslogin = user.log.latestlogin
-            user.log.previousIP = user.log.latestIP
+
+
+            if user.log.latestlogin is not None:
+                user.log.previouslogin = user.log.latestlogin
             user.log.latestlogin = datetime.now()
+
+            # Sets users latest ip
+            if user.log.latestIP is not None:
+                user.log.previousIP = user.log.latestIP
             user.log.latestIP = request.remote_addr
-            # Making the user's active field equal to true as they have now logged in
-            user.active = True
-            # Saving the log changes.
-            db.session.commit()
-            # If the user has only logged in once then they won't have a
-            # previous login to compare with.
-            if user.log.previouslogin is None:
-                user.current_streak = 0
-            # Adding 1 to the streak if today is one more day than the last login
-            elif user.log.latestlogin.date() == user.log.previouslogin.date() + datetime.timedelta(days=1):
-                user.current_streak += 1
-            # This would mean that the user has missed a day so the streak is reset
-            elif user.log.latestlogin != user.log.previouslogin:
-                user.current_streak = 0
-            # Saving the streak changes.
+
+            # Commit changes to log of users
             db.session.commit()
 
             #log_security_event(current_user, "LOGIN",
             #                   "Successful Login", "INFO")
 
             flash('Login successful!', category='success')
-            return redirect(url_for('accounts.account'))
+            return redirect(url_for('dashboard.dashboard'))
 
         session['attempts'] += 1  # Increment attempts on failed login
 
@@ -144,8 +138,8 @@ def logout():
     returns A redirect to the login page upon successful logout.
     """
     if current_user.is_authenticated:
-        log_security_event(current_user, "LOGOUT",
-                           "Successful Logout", "INFO")
+        #log_security_event(current_user, "LOGOUT",
+        #                   "Successful Logout", "INFO")
         logout_user()
         flash('You have been logged out.', 'success')
         return redirect(url_for('accounts.login'))
