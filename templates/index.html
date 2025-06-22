@@ -5,19 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ParQ - Smart Parking</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        .primary-bg { background: #4a6bff; }
-        .primary-text { color: #4a6bff; }
+        :root {
+            --primary: #4a6bff;
+            --primary-light: #e8ecff;
+        }
+        .primary-bg { background: var(--primary); }
+        .primary-text { color: var(--primary); }
         body { display: flex; flex-direction: column; min-height: 100vh; }
         main { flex: 1; }
-        .hero-image { max-width: 100%; height: auto; border-radius: 12px; }
+        .hero-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+        .city-badge {
+            background: var(--primary-light);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        .testimonial-card {
+            border-left: 3px solid var(--primary);
+        }
+        .how-it-works-step {
+            position: relative;
+            padding-left: 3rem;
+        }
+        .how-it-works-step:before {
+            content: attr(data-step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: var(--primary);
+            color: white;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body class="bg-light">
     <!-- Navbar -->
-    <nav class="navbar bg-white p-3">
+    <nav class="navbar navbar-expand-lg bg-white p-3 shadow-sm">
         <div class="container">
-            <span class="navbar-brand fw-bold primary-text">ParQ</span>
+            <span class="navbar-brand fw-bold primary-text fs-4">ParQ</span>
             <div>
                 <a href="/login" class="btn btn-outline-primary me-2">Login</a>
                 <a href="/register" class="btn btn-primary">Register</a>
@@ -28,50 +70,269 @@
     <!-- Main Content -->
     <main class="container my-5">
         <!-- Hero Section -->
-        <div class="row align-items-center">
-            <div class="col-lg-6 mb-4 text-center text-lg-start">
-                <h1 class="mb-3">Find Parking in Cyprus</h1>
-                <p class="lead mb-4">Reserve spots in real-time across all major cities.</p>
-                <a href="/booking" class="btn btn-primary btn-lg me-3">Find Parking</a>
-                <div class="mt-4">
-                    <p class="text-muted mb-2">Available in:</p>
-                    <span class="badge bg-primary-subtle text-primary me-2">Limassol</span>
-                    <span class="badge bg-primary-subtle text-primary me-2">Nicosia</span>
-                    <span class="badge bg-primary-subtle text-primary me-2">Larnaca</span>
+        <section class="row align-items-center py-4">
+            <div class="col-lg-6 mb-4">
+                <h1 class="display-5 fw-bold mb-3">Find Parking in Cyprus Made Easy</h1>
+                <p class="lead mb-4">Reserve parking spots in real-time across all major cities. Save time and avoid the hassle of searching for parking.</p>
+                <div class="d-flex flex-wrap gap-3 mb-4">
+                    <a href="/booking" class="btn btn-primary btn-lg px-4">Find Parking Now</a>
+                    <a href="#how-it-works" class="btn btn-outline-primary btn-lg px-4">How It Works</a>
+                </div>
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <span class="text-muted">Available in:</span>
+                    <span class="city-badge primary-text fw-medium">Limassol</span>
+                    <span class="city-badge primary-text fw-medium">Nicosia</span>
+                    <span class="city-badge primary-text fw-medium">Larnaca</span>
+                    <span class="city-badge primary-text fw-medium">Paphos</span>
                 </div>
             </div>
-            <div class="col-lg-6 text-center">
+            <div class="col-lg-6">
                 <img src="https://maps.googleapis.com/maps/api/staticmap?center=35.1264,33.4299&zoom=9&size=600x400&maptype=roadmap&markers=color:red%7C35.1856,33.3823%7C34.7071,32.9983%7C34.9167,33.6167%7C34.7750,32.4214&key=AIzaSyDuGrjd31q_Yad2NrtZh5zy7_mnUBCnSgc"
                     alt="Cyprus Parking Map"
                     class="hero-image">
             </div>
-        </div>
+        </section>
+
+        <!-- Stats Section -->
+        <section class="row g-4 my-5 py-4 bg-white rounded-3 p-4 shadow-sm">
+            <div class="col-md-3 text-center">
+                <h3 class="fw-bold primary-text">500+</h3>
+                <p class="text-muted mb-0">Parking Locations</p>
+            </div>
+            <div class="col-md-3 text-center">
+                <h3 class="fw-bold primary-text">10K+</h3>
+                <p class="text-muted mb-0">Happy Users</p>
+            </div>
+            <div class="col-md-3 text-center">
+                <h3 class="fw-bold primary-text">24/7</h3>
+                <p class="text-muted mb-0">Availability</p>
+            </div>
+            <div class="col-md-3 text-center">
+                <h3 class="fw-bold primary-text">5 min</h3>
+                <p class="text-muted mb-0">Average Booking Time</p>
+            </div>
+        </section>
 
         <!-- Features Section -->
-        <div class="my-5 py-4">
-            <h2 class="text-center mb-4">Why ParQ?</h2>
-            <div class="row justify-content-center">
-                <div class="col-md-8 col-lg-6 col-xl-4 mb-4">
-                    <div class="p-4 bg-white rounded text-center h-100">
-                        <h4>Secure & Private</h4>
-                        <p class="mb-0">End-to-end encryption protects your data and payments.</p>
-                    </div>
-                </div>
-                <div class="col-md-8 col-lg-6 col-xl-4 mb-4">
-                    <div class="p-4 bg-white rounded text-center h-100">
+        <section class="my-5 py-4">
+            <div class="text-center mb-5">
+                <h2 class="fw-bold">Why Choose ParQ?</h2>
+                <p class="text-muted">The smartest way to park in Cyprus</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-clock-fill"></i>
+                        </div>
                         <h4>Real-Time Availability</h4>
-                        <p class="mb-0">See which spots are available right now with our live parking lot monitoring system.</p>
+                        <p>See exactly which spots are available right now with our live parking map.</p>
                     </div>
                 </div>
-                <div class="col-md-8 col-lg-6 col-xl-4 mb-4">
-                    <div class="p-4 bg-white rounded text-center h-100">
-                        <h4>One-Tap Booking</h4>
-                        <p class="mb-0">Reserve in seconds with saved payment methods.</p>
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-credit-card-fill"></i>
+                        </div>
+                        <h4>Easy Payments</h4>
+                        <p>Secure in-app payments with multiple options including credit cards and mobile pay.</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-geo-alt-fill"></i>
+                        </div>
+                        <h4>City Coverage</h4>
+                        <p>Comprehensive coverage across all major Cyprus cities and popular destinations.</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-bell-fill"></i>
+                        </div>
+                        <h4>Smart Alerts</h4>
+                        <p>Get notifications when your parking time is about to expire.</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-car-front-fill"></i>
+                        </div>
+                        <h4>All Vehicle Types</h4>
+                        <p>Spaces available for cars, motorcycles, and even electric vehicles.</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="p-4 bg-white rounded-3 h-100 shadow-sm">
+                        <div class="feature-icon">
+                            <i class="bi bi-shield-lock-fill"></i>
+                        </div>
+                        <h4>Secure Parking</h4>
+                        <p>Verified parking locations with security features for your peace of mind.</p>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
+
+        <!-- How It Works -->
+        <section id="how-it-works" class="my-5 py-4 bg-primary-light rounded-3 p-4">
+            <div class="text-center mb-5">
+                <h2 class="fw-bold">How It Works</h2>
+                <p class="text-muted">Parking made simple in just 3 steps</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-4 how-it-works-step" data-step="1">
+                    <h4>Find Parking</h4>
+                    <p>Enter your destination and see available parking spots near you on our interactive map.</p>
+                </div>
+                <div class="col-md-4 how-it-works-step" data-step="2">
+                    <h4>Book & Pay</h4>
+                    <p>Reserve your spot and pay securely through our app in just a few taps.</p>
+                </div>
+                <div class="col-md-4 how-it-works-step" data-step="3">
+                    <h4>Park & Go</h4>
+                    <p>Arrive at your reserved spot - we'll guide you right to it. Your space is guaranteed!</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Testimonials -->
+        <section class="my-5 py-4">
+            <div class="text-center mb-5">
+                <h2 class="fw-bold">What Our Users Say</h2>
+                <p class="text-muted">Trusted by thousands of drivers across Cyprus</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-3 h-100 testimonial-card">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <div class="bg-primary-light rounded-circle" style="width: 50px; height: 50px;"></div>
+                            </div>
+                            <div>
+                                <h5 class="mb-0">Maria K.</h5>
+                                <small class="text-muted">Limassol</small>
+                            </div>
+                        </div>
+                        <p>"ParQ saved me so much time during my daily commute. No more circling blocks looking for parking!"</p>
+                        <div class="text-warning">
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-3 h-100 testimonial-card">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <div class="bg-primary-light rounded-circle" style="width: 50px; height: 50px;"></div>
+                            </div>
+                            <div>
+                                <h5 class="mb-0">Andreas P.</h5>
+                                <small class="text-muted">Nicosia</small>
+                            </div>
+                        </div>
+                        <p>"The real-time availability is accurate and the payment process is seamless. Highly recommended!"</p>
+                        <div class="text-warning">
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-3 h-100 testimonial-card">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                <div class="bg-primary-light rounded-circle" style="width: 50px; height: 50px;"></div>
+                            </div>
+                            <div>
+                                <h5 class="mb-0">Elena T.</h5>
+                                <small class="text-muted">Larnaca</small>
+                            </div>
+                        </div>
+                        <p>"I use ParQ every weekend when I go to the city center. It's become an essential app for me."</p>
+                        <div class="text-warning">
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-fill"></i>
+                            <i class="bi bi-star-half"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA Section -->
+        <section class="my-5 py-5 text-center bg-primary rounded-3 text-white">
+            <h2 class="fw-bold mb-3">Ready to Park Smarter?</h2>
+            <p class="fs-5 mb-4">Join thousands of happy users parking with ease across Cyprus</p>
+            <div class="d-flex justify-content-center gap-3">
+                <a href="/register" class="btn btn-light btn-lg px-4 fw-bold primary-text">Get Started</a>
+                <a href="/login" class="btn btn-outline-light btn-lg px-4">Login</a>
+            </div>
+        </section>
     </main>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-white py-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-4 mb-4">
+                    <h4 class="fw-bold primary-text">ParQ</h4>
+                    <p>The smartest way to find and reserve parking in Cyprus.</p>
+                </div>
+                <div class="col-lg-2 col-md-4 mb-4">
+                    <h5>Company</h5>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">About</a></li>
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">Careers</a></li>
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">Blog</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-4 mb-4">
+                    <h5>Support</h5>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">Help Center</a></li>
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">Contact Us</a></li>
+                        <li class="mb-2"><a href="#" class="text-white text-decoration-none">FAQ</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-4 col-md-4 mb-4">
+                    <h5>Download Our App</h5>
+                    <div class="d-flex gap-2 mt-3">
+                        <a href="#" class="btn btn-outline-light">
+                            <i class="bi bi-apple"></i> App Store
+                        </a>
+                        <a href="#" class="btn btn-outline-light">
+                            <i class="bi bi-google-play"></i> Play Store
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <hr class="my-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-0">© 2023 ParQ. All rights reserved.</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <a href="#" class="text-white me-3"><i class="bi bi-facebook"></i></a>
+                    <a href="#" class="text-white me-3"><i class="bi bi-twitter"></i></a>
+                    <a href="#" class="text-white me-3"><i class="bi bi-instagram"></i></a>
+                    <a href="#" class="text-white"><i class="bi bi-linkedin"></i></a>
+                </div>
+            </div>
+        </div>
+    </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
