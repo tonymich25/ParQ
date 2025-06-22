@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 from flask import Flask
@@ -64,6 +65,10 @@ class User(db.Model, UserMixin):
     role = db.Column(db.String(100), nullable=False)
 
 
+    # Log information
+    log = db.relationship("Log", uselist=False, back_populates="user")
+
+
     def __init__(self, email, firstname, lastname, phone, password):
         self.email = email
         self.firstname = firstname
@@ -90,6 +95,63 @@ class User(db.Model, UserMixin):
             :return: The user's id
         """
         return int(self.id)
+
+    def check_password(self, password):
+        """
+            Checks if the given password matches the stored hashed password
+
+            :param password: The password the user entered
+            :return: Boolean value depending on if the password is correct
+        """
+        # An incorrect password hash will return an error
+        try:
+            correct_password = passwordHasher.verify(self.password, password)
+        except:
+            correct_password = False
+        return correct_password
+
+
+    # Declaring a method for generating a log
+    def generate_log(self):
+        """
+            Creates a Log for a user
+        """
+        user_log = Log(self.id)
+        self.log = user_log
+        db.session.commit()
+
+
+
+class Log(db.Model):
+    """
+        Creates a Log in the app to be added to the database.
+
+        Attributes:
+            id                  A unique identifier for a log
+            userid              A foreign key to identifier what user the log belongs to
+            registration        The date that the user registered their account
+            latestlogin         The date of the user's last login
+            previouslogin       The data of the user's last login before latestlogin
+            latestIP            The last IP address that the user logged in with
+            previousIP          The last IP address that the user logged in with before latestIP
+    """
+
+    __tablename__ = 'logs'
+
+    # Declaring the fields for the log table
+    id = db.Column(db.Integer, primary_key=True)
+    userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    registration = db.Column(db.DateTime, nullable=False)
+    latestlogin = db.Column(db.DateTime, nullable=True)
+    previouslogin = db.Column(db.DateTime, nullable=True)
+    latestIP = db.Column(db.String(100), nullable=True)
+    previousIP = db.Column(db.String(100), nullable=True)
+    user = db.relationship("User", back_populates="log")
+
+    # Declaring the constructor
+    def __init__(self, userid):
+        self.userid = userid
+        self.registration = datetime.now()
 
 
 class Booking(db.Model, UserMixin):
