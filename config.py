@@ -167,5 +167,7 @@ class Booking(db.Model, UserMixin):
 
 from accounts.views import accounts_bp, passwordHasher
 from dashboard.views import dashboard_bp
+from book.views import book_bp
 app.register_blueprint(accounts_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(book_bp)
