@@ -1,18 +1,34 @@
 import os
-
+from dotenv import load_dotenv
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin
+from flask_login import UserMixin, LoginManager
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
 
 app = Flask(__name__)
 
+# LOAD .ENV FILE
+load_dotenv()
+
+
+# SECRET KEY FOR FLASK FORMS
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['RECAPTCHA_PRIVATE_KEY'] = os.getenv('RECAPTCHA_PRIVATE_KEY')
+app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
+
+# Initialising Login Manager
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+
+
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
-app.config['SQLALCHEMY_ECHO'] = os.getenv('SQLALCHEMY_ECHO') == 'True'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = bool(os.getenv('SQLALCHEMY_TRACK_MODIFICATIONS'))
+app.config['SQLALCHEMY_ECHO'] = True if os.getenv('SQLALCHEMY_ECHO') == 'True' else False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True if os.getenv('SQLALCHEMY_TRACK_MODIFICATIONS') == 'True' else False
 
 
 metadata = MetaData(
@@ -56,8 +72,15 @@ class User(db.Model, UserMixin):
         self.password = password
         self.role = "end_user"
 
+    @login_manager.user_loader
+    def load_user(id):
+        """
+            Returns a user from the database.
 
-
+            :param id: The ID of the user to find
+            :return: The ids corresponding record in the database
+        """
+        return User.query.get(int(id))
 
 
     def get_id(self):
@@ -69,5 +92,18 @@ class User(db.Model, UserMixin):
         return int(self.id)
 
 
+class Booking(db.Model, UserMixin):
+
+    __tablename__ = 'bookings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    location = db.Column(db.Text, nullable=False)
+    parkingspotid = db.Column(db.Text, nullable=False)
+    numplate = db.Column(db.Text, nullable=False)
+
+
 from accounts.views import accounts_bp, passwordHasher
+from dashboard.views import dashboard_bp
 app.register_blueprint(accounts_bp)
+app.register_blueprint(dashboard_bp)
