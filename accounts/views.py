@@ -1,7 +1,11 @@
+import datetime
+
 from flask import Blueprint, render_template, flash, redirect, url_for, session, request
 from flask_login import login_user, logout_user, login_required, current_user
 
 from argon2 import PasswordHasher
+
+from accounts.forms import RegistrationForm, LoginForm
 from config import User, db
 
 
@@ -16,10 +20,10 @@ def registration():
     # Create Unauthorised Role Access Attempt log when user is authenticated and is trying to access /registration
     if current_user.is_authenticated:
         # Change to log_security event method
-        logger.warning('[User:{}, Role:{}, URL requested:{}, IP:{}] Unauthorised Role Access Attempt'.format(current_user.email,
-                                                                                                  current_user.role,
-                                                                                                  request.url,
-                                                                                                  request.remote_addr))
+        #logger.warning('[User:{}, Role:{}, URL requested:{}, IP:{}] Unauthorised Role Access Attempt'.format(current_user.email,
+        #                                                                                          current_user.role,
+        #                                                                                          request.url,
+        #                                                                                          request.remote_addr))
         # Flash error message
         flash('You are already logged in.', 'info')
         return redirect(url_for('posts.posts'))
@@ -46,7 +50,7 @@ def registration():
         db.session.add(new_user)
         db.session.commit()
 
-        log_security_event(new_user, "REGISTER", "Successful Registration", "INFO")
+        #log_security_event(new_user, "REGISTER", "Successful Registration", "INFO")
 
         return redirect(url_for('accounts.login'))
 
@@ -60,10 +64,10 @@ def login():
     if current_user.is_authenticated:
 
         # Change to log_security event method
-        logger.warning('[User:{}, Role:{}, URL requested:{}, IP:{}] Unauthorised Role Access Attempt'.format(current_user.email,
-                                                                                                  current_user.role,
-                                                                                                  request.url,
-                                                                                                  request.remote_addr))
+        #logger.warning('[User:{}, Role:{}, URL requested:{}, IP:{}] Unauthorised Role Access Attempt'.format(current_user.email,
+        #                                                                                          current_user.role,
+        #                                                                                         request.url,
+        #                                                                                          request.remote_addr))
         # Flash error message
         flash('You are already logged in.', 'info')
         return redirect(url_for('posts.posts'))
@@ -104,7 +108,7 @@ def login():
             if user.log.previouslogin is None:
                 user.current_streak = 0
             # Adding 1 to the streak if today is one more day than the last login
-            elif user.log.latestlogin.date() == user.log.previouslogin.date() + timedelta(days=1):
+            elif user.log.latestlogin.date() == user.log.previouslogin.date() + datetime.timedelta(days=1):
                 user.current_streak += 1
             # This would mean that the user has missed a day so the streak is reset
             elif user.log.latestlogin != user.log.previouslogin:
@@ -112,8 +116,8 @@ def login():
             # Saving the streak changes.
             db.session.commit()
 
-            log_security_event(current_user, "LOGIN",
-                               "Successful Login", "INFO")
+            #log_security_event(current_user, "LOGIN",
+            #                   "Successful Login", "INFO")
 
             flash('Login successful!', category='success')
             return redirect(url_for('accounts.account'))
