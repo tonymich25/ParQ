@@ -1,0 +1,82 @@
+<!-- ================================================================================== -->
+<!-- This document is extended by pages that are shown to the user after login.         -->
+<!-- ================================================================================== -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ParQ{% endblock %}</title>
+
+  <!-- Bootstrap CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+
+  <!-- Bootstrap Icons -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
+    rel="stylesheet"
+  >
+
+  <!-- Google Material Symbols Outlined -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined"
+    rel="stylesheet"
+  />
+
+  <!-- HelpMyHealth CSS
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style2.css') }}">
+  {% block extra_styles %}{% endblock %}
+
+  {% block head %}{% endblock %} -->
+</head>
+
+<body class="{% block body_class %}default{% endblock %}">
+  <div class="layout-wrapper">
+
+    <!-- Sidebar -->
+      <a class="nav-link{% if request.endpoint=='dashboard.dashboard' %} active{% endif %}"
+         href="{{ url_for('dashboard.dashboard') }}">
+        <span class="material-symbols-outlined">dashboard</span>
+      </a>
+
+
+      <!--
+      {% if current_user.role == 'sec_admin' %}
+         <a class="nav-link{% if request.endpoint=='security.security' %} active{% endif %}"
+            href="{{ url_for('security.security') }}">
+            <span class="material-symbols-outlined">admin_panel_settings</span>
+         </a>
+      {% endif %}
+
+      {% if current_user.role == 'db_admin' %}
+         <a class="nav-link{% if request.endpoint=='admin.index' %} active{% endif %}"
+            href="{{ url_for('admin.index') }}">
+            <span class="material-symbols-outlined">admin_panel_settings</span>
+         </a>
+      {% endif %} -->
+
+    </nav>
+
+
+
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    function toggleSidebar() {
+      document.querySelector('.vertical-nav').classList.toggle('active');
+      document.querySelector('.layout-wrapper .main')
+              .classList.toggle('shifted');
+    }
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
