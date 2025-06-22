@@ -1,71 +1,80 @@
-<!-- ================================================================================== -->
-<!-- This is the frontend for the Register page, which extends base1.html. This page
-     allows the user to create an account.                                              -->
-<!-- ================================================================================== -->
-
 {% extends "base1.html" %}
 
 {% block title %}Create an Account{% endblock %}
-
 {% block body_class %}register-page{% endblock %}
 
 {% block content %}
+<div class="d-flex justify-content-center align-items-center min-vh-100 bg-light">
+    <div class="card shadow-sm p-4" style="max-width: 480px; width: 100%;">
+        <h2 class="mb-4 text-center">Create an Account</h2>
 
-    <div class="center-side">
-        <div class="container light">
+        <form action="{{ url_for('accounts.registration') }}" method="POST" novalidate>
+            {{ form.hidden_tag() }}
 
-            <!-- Display logo and heading. -->
-            <h2>Create an Account</h2>
-
-            <form action="{{ url_for('accounts.registration') }}" method="POST">
-                {{ form.hidden_tag() }}
-                <div>
-                    {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} mt-3 alert-dismissible" role="alert">
-                        {{ message }}. Go to <a href="{{ url_for('accounts.login') }}">login page</a>.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" onclick="delete_flash(this)">
-                            <span>&times;</span>
-                        </button>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}. Go to <a href="{{ url_for('accounts.login') }}" class="alert-link">login page</a>.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close" onclick="delete_flash(this)"></button>
                     </div>
-                    {% endfor %}
-                    {% endwith %}
-                </div>
+                {% endfor %}
+            {% endwith %}
 
-                <!-- Register form. -->
-                <input type="email" class="input-field" name="email" placeholder="Email Address" required>
+            <div class="mb-3">
+                <label for="email" class="form-label">Email Address</label>
+                <input type="email" id="email" class="form-control {% if form.email.errors %}is-invalid{% endif %}" name="email" placeholder="Enter your email" required>
                 {% for error in form.email.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <input type="text" class="input-field" name="firstname" placeholder="First Name" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="firstname" class="form-label">First Name</label>
+                <input type="text" id="firstname" class="form-control {% if form.firstname.errors %}is-invalid{% endif %}" name="firstname" placeholder="Enter your first name" required>
                 {% for error in form.firstname.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <input type="text" class="input-field" name="lastname" placeholder="Last Name" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="lastname" class="form-label">Last Name</label>
+                <input type="text" id="lastname" class="form-control {% if form.lastname.errors %}is-invalid{% endif %}" name="lastname" placeholder="Enter your last name" required>
                 {% for error in form.lastname.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <input type="text" class="input-field" name="phone" placeholder="Phone Number" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="phone" class="form-label">Phone Number</label>
+                <input type="tel" id="phone" class="form-control {% if form.phone.errors %}is-invalid{% endif %}" name="phone" placeholder="Enter your phone number" required>
                 {% for error in form.phone.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <input type="password" class="input-field" name="password" placeholder="Password" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" id="password" class="form-control {% if form.password.errors %}is-invalid{% endif %}" name="password" placeholder="Create a password" required>
                 {% for error in form.password.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <input type="password" class="input-field" name="confirm_password" placeholder="Confirm Password" required>
+                <div class="form-text">Password must be 8-15 characters long, include at least 1 number, and at least 1 special character.</div>
+            </div>
+
+            <div class="mb-4">
+                <label for="confirm_password" class="form-label">Confirm Password</label>
+                <input type="password" id="confirm_password" class="form-control {% if form.confirm_password.errors %}is-invalid{% endif %}" name="confirm_password" placeholder="Confirm your password" required>
                 {% for error in form.confirm_password.errors %}
-                    <div class="error">{{ error }}</div>
+                    <div class="invalid-feedback">{{ error }}</div>
                 {% endfor %}
-                <p>Password must be 8-15 characters long, include at least 1 number, and include at least 1 special character.</p>
-                <button type="submit" class="btn">Sign Up</button>
-            </form>
+            </div>
 
+            <button type="submit" class="btn btn-primary w-100">Sign Up</button>
+        </form>
 
-            <!-- Redirect to Register page. -->
-            <p class="hyperlink">Already a user? <a href="{{ url_for('accounts.login') }}"><u>Login here!</u></a></p>
-
-        </div>
+        <p class="mt-3 text-center">
+            Already a user? <a href="{{ url_for('accounts.login') }}" class="text-decoration-underline">Login here!</a>
+        </p>
     </div>
-
+</div>
 {% endblock %}
