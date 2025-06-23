@@ -165,6 +165,16 @@ class Booking(db.Model, UserMixin):
     numplate = db.Column(db.Text, nullable=False)
 
 
+class City(db.Model, UserMixin):
+
+    __tablename__ = 'cities'
+
+    id = db.Column(db.Integer, primary_key=True)
+    city = db.Column(db.Text, nullable=False)
+
+
+
+
 from accounts.views import accounts_bp, passwordHasher
 from dashboard.views import dashboard_bp
 from book.views import book_bp
