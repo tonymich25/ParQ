@@ -3,11 +3,7 @@ from wtforms import SelectField
 from wtforms.validators import DataRequired
 
 
-class BookForm(FlaskForm):
+class BookingForm(FlaskForm):
 
-    city = SelectField("City", choices=[
-        ("Limassol", "Limassol"),
-        ("Nicosia", "Nicosia"),
-        ("Nicosia", "Nicosia"),
-        ], validators=[DataRequired()])
+    city = SelectField("City", choices=[], validators=[DataRequired()])
 
