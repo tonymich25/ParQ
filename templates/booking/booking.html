@@ -33,32 +33,26 @@
     </div>
 </div>
 
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDuGrjd31q_Yad2NrtZh5zy7_mnUBCnSgc&callback=initMap" async defer></script>
+<!-- Add Mapbox GL JS CSS and JS -->
+<link href='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css' rel='stylesheet' />
+<script src='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js'></script>
 
 <script>
-// Global variables for map and geocoder
-var map;
-var geocoder;
-var markers = [];
+// Mapbox access token - replace with your own token
+mapboxgl.accessToken = 'pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q';
 
 // Initialize the map
-function initMap() {
-    geocoder = new google.maps.Geocoder();
-    // Set Cyprus as the center
-    var cyprus = {lat: 35.1264, lng: 33.4299};
-    map = new google.maps.Map(document.getElementById('map'), {
-        center: cyprus,
-        zoom: 7,
-        gestureHandling: 'greedy',
-        zoomControl: true,
-        mapTypeControl: true,
-        scaleControl: true,
-        streetViewControl: true,
-        rotateControl: true,
-        fullscreenControl: true
-    });
-}
+var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v11',
+    center: [33.4299, 35.1264], // Cyprus coordinates [lng, lat]
+    zoom: 7
+});
 
+// Add navigation controls
+map.addControl(new mapboxgl.NavigationControl());
+
+// Function to handle city selection change
 function cityChanged(selectElement) {
     const cityName = selectElement.value;
     if (!cityName) return;
@@ -84,7 +78,7 @@ function cityChanged(selectElement) {
             const option = document.createElement('option');
             option.value = lot.id;
             option.textContent = lot.name;
-            option.dataset.address = lot.name; // Store address for geocoding
+            option.dataset.address = lot.address; // Store address for geocoding
             parkingSelect.appendChild(option);
         });
 
@@ -92,62 +86,70 @@ function cityChanged(selectElement) {
     });
 }
 
+// Function to handle parking lot selection
 function parkingLotSelected(selectElement) {
     const address = selectElement.options[selectElement.selectedIndex].dataset.address;
     if (!address) return;
 
-    // Zoom to the exact parking lot location
-    geocoder.geocode({'address': address + ', Cyprus'}, function(results, status) {
-        if (status === 'OK') {
-            // Clear previous markers
-            clearMarkers();
+    // Geocode the address using Mapbox Geocoding API
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.features && data.features.length > 0) {
+                const coordinates = data.features[0].center;
 
-            // Add new marker for the parking lot
-            const marker = new google.maps.Marker({
-                map: map,
-                position: results[0].geometry.location,
-                title: address
-            });
-            markers.push(marker);
+                // Clear previous markers
+                clearMarkers();
 
-            // Zoom to a closer level
-            map.setCenter(results[0].geometry.location);
-            map.setZoom(17); // Very close zoom for precise location
+                // Add marker for the parking lot
+                new mapboxgl.Marker()
+                    .setLngLat(coordinates)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h6>${address}</h6>`))
+                    .addTo(map);
 
-        } else {
-            console.warn('Geocode was not successful for the following reason: ' + status);
-        }
-    });
-}
-
-function clearMarkers() {
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
+                // Zoom to the location
+                map.flyTo({
+                    center: coordinates,
+                    zoom: 16
+                });
+            }
+        });
 }
 
 // Function to zoom to selected city
 function zoomToCity(cityName) {
     if (!cityName) return;
 
-    // Find the city on the map
-    geocoder.geocode({'address': cityName + ', Cyprus'},
-        function(results, status) {
-            if (status === 'OK') {
-                // Get the location
-                var location = results[0].geometry.location;
-                var bounds = results[0].geometry.bounds;
+    // Geocode the city using Mapbox Geocoding API
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cityName + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.features && data.features.length > 0) {
+                const coordinates = data.features[0].center;
+                const bbox = data.features[0].bbox;
 
-                // Move map to the city
-                if (bounds) {
-                    map.fitBounds(bounds);
+                if (bbox) {
+                    // Fit to bounds if available
+                    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
+                        padding: 50
+                    });
                 } else {
-                    map.setCenter(location);
-                    map.setZoom(13);
+                    // Fly to center if no bounds
+                    map.flyTo({
+                        center: coordinates,
+                        zoom: 12
+                    });
                 }
-            } else {
-                alert('Could not find the city: ' + cityName);
             }
         });
+}
+
+// Function to clear all markers
+function clearMarkers() {
+    const markers = document.getElementsByClassName('mapboxgl-marker');
+    while (markers.length > 0) {
+        markers[0].remove();
+    }
 }
 </script>
 
