@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="container">
-    <h1>Book your spot </h1>
+    <h1>Book your spot</h1>
     <div class="p-2 row">
         <div class="col-2"></div>
         <div class="col-8">
@@ -21,7 +21,7 @@
 
                     <div class="form-group">
                         {{ form.parkingLot.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required>
+                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected(this)">
                             <option value="" disabled selected hidden>Please select a city first</option>
                         </select>
                     </div>
@@ -39,6 +39,7 @@
 // Global variables for map and geocoder
 var map;
 var geocoder;
+var markers = [];
 
 // Initialize the map
 function initMap() {
@@ -76,15 +77,52 @@ function cityChanged(selectElement) {
         const parkingSelect = document.getElementById('parking-lot-select');
         parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
 
+        // Clear previous markers
+        clearMarkers();
+
         data.forEach(lot => {
             const option = document.createElement('option');
             option.value = lot.id;
             option.textContent = lot.name;
+            option.dataset.address = lot.name; // Store address for geocoding
             parkingSelect.appendChild(option);
         });
 
         parkingSelect.disabled = false;
     });
+}
+
+function parkingLotSelected(selectElement) {
+    const address = selectElement.options[selectElement.selectedIndex].dataset.address;
+    if (!address) return;
+
+    // Zoom to the exact parking lot location
+    geocoder.geocode({'address': address + ', Cyprus'}, function(results, status) {
+        if (status === 'OK') {
+            // Clear previous markers
+            clearMarkers();
+
+            // Add new marker for the parking lot
+            const marker = new google.maps.Marker({
+                map: map,
+                position: results[0].geometry.location,
+                title: address
+            });
+            markers.push(marker);
+
+            // Zoom to a closer level
+            map.setCenter(results[0].geometry.location);
+            map.setZoom(17); // Very close zoom for precise location
+
+        } else {
+            console.warn('Geocode was not successful for the following reason: ' + status);
+        }
+    });
+}
+
+function clearMarkers() {
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
 }
 
 // Function to zoom to selected city

@@ -24,13 +24,13 @@ def book():
 def city_selected():
     data = request.get_json()
     cityName = data.get('city')
-    print("City selected:", cityName)
     city = City.query.filter_by(city=cityName).first()
     parkingLots = ParkingLot.query.filter_by(city_id=city.id).all()
-    for lot in parkingLots:
-        print(lot.address)
-    return jsonify([{'id': lot.id, 'name': lot.address} for lot in parkingLots])
-
+    return jsonify([{
+        'id': lot.id,
+        'name': lot.address,  # Using address as the display name
+        'address': lot.address  # Also include address for geocoding
+    } for lot in parkingLots])
 
 @booking_bp.route('/parking_lot', methods=['GET', 'POST'])
 def parking_lot():
