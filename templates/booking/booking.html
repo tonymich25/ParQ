@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="container">
-    <h1>Create Post</h1>
+    <h1>Book your spot </h1>
     <div class="p-2 row">
         <div class="col-2"></div>
         <div class="col-8">
@@ -18,6 +18,20 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <!-- Parking Lot Selection (hidden by default) -->
+                    <div class="form-group" id="parking-form" style="{% if not form.city.data %}display:none;{% endif %}">
+                        {{ form.parkingLot.label }}
+                        <select class="form-control" name="parking_lot">
+                            <option value="" disabled selected hidden>Select a parking lot...</option>
+                            {% if form.city.data %}
+                                {% for lot in get_parking_lots(form.city.data) %}
+                                    <option value="{{ lot.id }}">{{ lot.name }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+
+
                 </div>
             </form>
             <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
