@@ -11,7 +11,7 @@
                     {{ form.csrf_token() }}
                     <div class="form-group">
                         {{ form.city.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.city.name }}" onchange="zoomToCity(this.value)" required>
+                        <select class="form-control" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
                             <option value="" disabled selected hidden>Select a city</option>
                             {% for val, label in form.city.choices %}
                                 <option value="{{ label }}">{{ label }}</option>
@@ -19,20 +19,12 @@
                         </select>
                     </div>
 
-                    <!-- Parking Lot Selection (hidden by default) -->
-                    <div class="form-group" id="parking-form" style="{% if not form.city.data %}display:none;{% endif %}">
-                        {{ form.parkingLot.label }}
-                        <select class="form-control" name="parking_lot">
-                            <option value="" disabled selected hidden>Select a parking lot...</option>
-                            {% if form.city.data %}
-                                {% for lot in get_parking_lots(form.city.data) %}
-                                    <option value="{{ lot.id }}">{{ lot.name }}</option>
-                                {% endfor %}
-                            {% endif %}
+                    <div class="form-group">
+                        {{ form.parkingLot.label }}<span class="text-danger">*</span>
+                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required>
+                            <option value="" disabled selected hidden>Please select a city first</option>
                         </select>
                     </div>
-
-
                 </div>
             </form>
             <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
@@ -66,21 +58,38 @@ function initMap() {
     });
 }
 
-// Function to zoom to selected city
-function zoomToCity(cityName) {
+function cityChanged(selectElement) {
+    const cityName = selectElement.value;
     if (!cityName) return;
 
-    // Send city name to server
+    // Zoom to the selected city
+    zoomToCity(cityName);
+
+    // Fetch parking lots for the selected city
     fetch('/city_selected', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({city: cityName})
+    })
+    .then(response => response.json())
+    .then(data => {
+        const parkingSelect = document.getElementById('parking-lot-select');
+        parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
 
-    }).then((response) => response.json())
-        .then((json) =>{
-            console.log(json);
+        data.forEach(lot => {
+            const option = document.createElement('option');
+            option.value = lot.id;
+            option.textContent = lot.name;
+            parkingSelect.appendChild(option);
+        });
 
+        parkingSelect.disabled = false;
     });
+}
+
+// Function to zoom to selected city
+function zoomToCity(cityName) {
+    if (!cityName) return;
 
     // Find the city on the map
     geocoder.geocode({'address': cityName + ', Cyprus'},
