@@ -1,70 +1,94 @@
 {% extends 'base1.html' %}
 
 {% block content %}
-
- <div class="container">
+<div class="container">
     <h1>Create Post</h1>
     <div class="p-2 row">
         <div class="col-2"></div>
         <div class="col-8">
             <form method="POST">
                 <div class="p-2 bg-light border border-primary text-left">
-
                     {{ form.csrf_token() }}
                     <div class="form-group">
                         {{ form.city.label}}<span class="text-danger">*</span>
-{{ form.city(class="form-control", onchange="zoomToCity(this.options[this.selectedIndex].text)") }}
+                        {{ form.city(class="form-control", onchange="zoomToCity(this.options[this.selectedIndex].text)") }}
                     </div>
-
-
                 </div>
             </form>
             <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
-
         </div>
         <div class="col-2"></div>
     </div>
 </div>
 
-    <script>
-function sendSelection(selectedValue) {
-  fetch('/city_selected', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({city: selectedValue})
-  });
-}
-</script>
-
-
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDuGrjd31q_Yad2NrtZh5zy7_mnUBCnSgc&callback=initMap" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDuGrjd31q_Yad2NrtZh5zy7_mnUBCnSgc&callback=initMap" async defer></script>
 
 <script>
 let map, geocoder;
+let marker = null; // To store the marker reference
 
 function initMap() {
-  geocoder = new google.maps.Geocoder();
-  map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: 35.1264, lng: 33.4299 }, // Cyprus
-    zoom: 7
-  });
+    geocoder = new google.maps.Geocoder();
+    map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 35.1264, lng: 33.4299 }, // Cyprus coordinates
+        zoom: 7, // Country-level zoom
+        gestureHandling: 'greedy',
+        zoomControl: true,
+        mapTypeControl: true,
+        scaleControl: true,
+        streetViewControl: true,
+        rotateControl: true,
+        fullscreenControl: true
+    });
 }
 
 function zoomToCity(cityName) {
-  // Optional: send to Flask
-  fetch('/city_selected', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ city: cityName })
-  });
+    if (!cityName) return;
 
-  // Zoom map
-  geocoder.geocode({ address: cityName + ', Cyprus' }, function(results, status) {
-    if (status === 'OK') {
-      map.setCenter(results[0].geometry.location);
-      map.setZoom(12);
-    }
-  });
+    // Send selection to Flask
+    fetch('/city_selected', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city: cityName })
+    });
+
+    // Geocode the city
+    geocoder.geocode({ address: cityName + ', Cyprus' }, function(results, status) {
+        if (status === 'OK') {
+            const targetLocation = results[0].geometry.location;
+            const bounds = results[0].geometry.bounds;
+
+            // Clear previous marker if exists
+            if (marker) {
+                marker.setMap(null);
+            }
+
+            // Add new marker
+            marker = new google.maps.Marker({
+                position: targetLocation,
+                map: map,
+                title: cityName,
+                animation: google.maps.Animation.DROP
+            });
+
+            // Smooth zoom to the city
+            if (bounds) {
+                // Fit to bounds if available for better view
+                map.fitBounds(bounds, {
+                    padding: 50, // Add some padding
+                    maxZoom: 13 // Don't zoom too close
+                });
+            } else {
+                // Fallback to point zoom
+                map.setCenter(targetLocation);
+                map.setZoom(13); // City-level zoom
+            }
+
+        } else {
+            console.error('Geocode failed: ' + status);
+            alert('Could not find location for ' + cityName);
+        }
+    });
 }
 </script>
 
