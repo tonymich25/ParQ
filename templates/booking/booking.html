@@ -13,7 +13,7 @@
                     {{ form.csrf_token() }}
                     <div class="form-group">
                         {{ form.city.label}}<span class="text-danger">*</span>
-                        {{ form.city(class="form-control") }}
+                        {{ form.city(class="form-control", onchange="sendSelection(this.value)") }}
                     </div>
 
 
@@ -23,5 +23,16 @@
         <div class="col-2"></div>
     </div>
 </div>
+
+    <script>
+function sendSelection(selectedValue) {
+  fetch('/city_selected', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({city: selectedValue})
+  });
+}
+</script>
+
 
 {% endblock %}
