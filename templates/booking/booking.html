@@ -13,12 +13,14 @@
                     {{ form.csrf_token() }}
                     <div class="form-group">
                         {{ form.city.label}}<span class="text-danger">*</span>
-                        {{ form.city(class="form-control", onchange="sendSelection(this.value)") }}
+{{ form.city(class="form-control", onchange="zoomToCity(this.options[this.selectedIndex].text)") }}
                     </div>
 
 
                 </div>
             </form>
+            <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
+
         </div>
         <div class="col-2"></div>
     </div>
@@ -34,5 +36,36 @@ function sendSelection(selectedValue) {
 }
 </script>
 
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDuGrjd31q_Yad2NrtZh5zy7_mnUBCnSgc&callback=initMap" async defer></script>
+
+<script>
+let map, geocoder;
+
+function initMap() {
+  geocoder = new google.maps.Geocoder();
+  map = new google.maps.Map(document.getElementById("map"), {
+    center: { lat: 35.1264, lng: 33.4299 }, // Cyprus
+    zoom: 7
+  });
+}
+
+function zoomToCity(cityName) {
+  // Optional: send to Flask
+  fetch('/city_selected', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city: cityName })
+  });
+
+  // Zoom map
+  geocoder.geocode({ address: cityName + ', Cyprus' }, function(results, status) {
+    if (status === 'OK') {
+      map.setCenter(results[0].geometry.location);
+      map.setZoom(12);
+    }
+  });
+}
+</script>
 
 {% endblock %}
