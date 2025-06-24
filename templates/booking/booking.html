@@ -10,9 +10,15 @@
                 <div class="p-2 bg-light border border-primary text-left">
                     {{ form.csrf_token() }}
                     <div class="form-group">
-                        {{ form.city.label}}<span class="text-danger">*</span>
-                        {{ form.city(class="form-control", onchange="zoomToCity(this.options[this.selectedIndex].text)") }}
-                    </div>
+  {{ form.city.label }}<span class="text-danger">*</span>
+  <select class="form-control" name="{{ form.city.name }}" onchange="zoomToCity(this.options[this.selectedIndex].text)" required>
+    <option value="" disabled selected hidden>Select a city</option>
+    {% for val, label in form.city.choices %}
+      <option value="{{ val }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+</div>
+
                 </div>
             </form>
             <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
