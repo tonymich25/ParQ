@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required
 
 from booking.forms import BookingForm
-from config import City, db
+from config import City, db, ParkingLot
 
 booking_bp = Blueprint('booking', __name__, template_folder='templates')
 
@@ -16,6 +16,7 @@ def book():
         cities = City.query.all()
 
         form.city.choices = [(city.id, city.city) for city in cities]
+        form.parkingLot = []
 
         return render_template('booking/booking.html', form=form)
 
@@ -26,3 +27,9 @@ def city_selected():
     print("City selected:", city)
     return jsonify({'status': 'ok'})
 
+@booking_bp.route('/parking_lot', methods=['GET', 'POST'])
+def parking_lot():
+    data = request.get_json()
+    city_id = data.get('city')
+    lots = ParkingLot.query.filter_by(city_id=city_id).all()
+    return jsonify([{'id': lot.id, 'name': lot.name} for lot in lots])
