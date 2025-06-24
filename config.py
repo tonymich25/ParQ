@@ -173,6 +173,11 @@ class City(db.Model, UserMixin):
     city = db.Column(db.Text, nullable=False)
 
 
+class ParkingLot(db.Model, UserMixin):
+    __tablename__ = 'parking_lots'
+    id = db.Column(db.Integer, primary_key=True)
+    city_id = db.Column(db.Integer, db.ForeignKey('cities.id'))
+    address = db.Column(db.String(100))
 
 
 from accounts.views import accounts_bp, passwordHasher
