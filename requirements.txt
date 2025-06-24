@@ -18,3 +18,5 @@ WTForms
 Jinja2
 psycopg2-binary
 Flask-Migrate
+
+dotenv
