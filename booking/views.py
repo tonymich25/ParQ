@@ -31,17 +31,3 @@ def city_selected():
         'name': lot.address,  # Using address as the display name
         'address': lot.address  # Also include address for geocoding
     } for lot in parkingLots])
-
-@booking_bp.route('/parking_lot', methods=['GET', 'POST'])
-def parking_lot():
-    data = request.get_json()
-    city_id = data.get('city')
-    lots = ParkingLot.query.filter_by(city_id=city_id).all()
-    return jsonify([{'id': lot.id, 'name': lot.name} for lot in lots])
-
-
-@booking_bp.route('/get_parking_lots')
-def get_parking_lots():
-    city_id = request.args.get('city_id')
-    lots = ParkingLot.query.filter_by(city_id=city_id).all()
-    return jsonify([{'id': lot.id, 'name': lot.name} for lot in lots])
