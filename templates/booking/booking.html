@@ -120,27 +120,35 @@ function parkingLotSelected(selectElement) {
 function zoomToCity(cityName) {
     if (!cityName) return;
 
-    // Geocode the city using Mapbox Geocoding API
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cityName + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
+    // Add ', Cyprus' to ensure we get results in Cyprus
+    const query = encodeURIComponent(`${cityName}, Cyprus`);
+
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxgl.accessToken}`)
         .then(response => response.json())
         .then(data => {
             if (data.features && data.features.length > 0) {
-                const coordinates = data.features[0].center;
-                const bbox = data.features[0].bbox;
+                // Find the most relevant result (usually the first one)
+                const feature = data.features[0];
+                const coordinates = feature.center;
 
-                if (bbox) {
-                    // Fit to bounds if available
-                    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
-                        padding: 50
-                    });
-                } else {
-                    // Fly to center if no bounds
-                    map.flyTo({
-                        center: coordinates,
-                        zoom: 12
-                    });
-                }
+                // Fly to the location with appropriate zoom
+                map.flyTo({
+                    center: coordinates,
+                    zoom: 12, // Good city-level zoom
+                    essential: true // This ensures the animation happens
+                });
+
+                // Optional: Add a marker
+                new mapboxgl.Marker()
+                    .setLngLat(coordinates)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h6>${cityName}</h6>`))
+                    .addTo(map);
+            } else {
+                console.warn('No results found for:', cityName);
             }
+        })
+        .catch(error => {
+            console.error('Geocoding error:', error);
         });
 }
 
