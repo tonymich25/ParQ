@@ -18,6 +18,7 @@
                             {% endfor %}
                         </select>
                     </div>
+
                     <!-- Parking Lot Selection (hidden by default) -->
                     <div class="form-group" id="parking-form" style="{% if not form.city.data %}display:none;{% endif %}">
                         {{ form.parkingLot.label }}
@@ -74,26 +75,32 @@ function zoomToCity(cityName) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({city: cityName})
+
+    }).then((response) => response.json())
+        .then((json) =>{
+            console.log(json);
+
     });
 
     // Find the city on the map
-    geocoder.geocode({'address': cityName + ', Cyprus'}, function(results, status) {
-        if (status === 'OK') {
-            // Get the location
-            var location = results[0].geometry.location;
-            var bounds = results[0].geometry.bounds;
+    geocoder.geocode({'address': cityName + ', Cyprus'},
+        function(results, status) {
+            if (status === 'OK') {
+                // Get the location
+                var location = results[0].geometry.location;
+                var bounds = results[0].geometry.bounds;
 
-            // Move map to the city
-            if (bounds) {
-                map.fitBounds(bounds);
+                // Move map to the city
+                if (bounds) {
+                    map.fitBounds(bounds);
+                } else {
+                    map.setCenter(location);
+                    map.setZoom(13);
+                }
             } else {
-                map.setCenter(location);
-                map.setZoom(13);
+                alert('Could not find the city: ' + cityName);
             }
-        } else {
-            alert('Could not find the city: ' + cityName);
-        }
-    });
+        });
 }
 </script>
 
