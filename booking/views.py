@@ -1,11 +1,12 @@
 from flask import Blueprint, render_template, request, jsonify
+from flask_login import login_required
 
 from booking.forms import BookingForm
 from config import City, db
 
 booking_bp = Blueprint('booking', __name__, template_folder='templates')
 
-
+@login_required
 @booking_bp.route('/booking', methods=['GET', 'POST'])
 def book():
 

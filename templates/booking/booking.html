@@ -58,18 +58,6 @@ function zoomToCity(cityName) {
             const targetLocation = results[0].geometry.location;
             const bounds = results[0].geometry.bounds;
 
-            // Clear previous marker if exists
-            if (marker) {
-                marker.setMap(null);
-            }
-
-            // Add new marker
-            marker = new google.maps.Marker({
-                position: targetLocation,
-                map: map,
-                title: cityName,
-                animation: google.maps.Animation.DROP
-            });
 
             // Smooth zoom to the city
             if (bounds) {
