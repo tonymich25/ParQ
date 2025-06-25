@@ -11,7 +11,7 @@
                     {{ form.csrf_token() }}
                     <div class="form-group">
                         {{ form.city.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
+                        <select class="form-control" name="{{ form.city.name }}" id="city-select" onchange="handleCitySelection(this.value)" required>
                             <option value="" disabled selected hidden>Select a city</option>
                             {% for val, label in form.city.choices %}
                                 <option value="{{ label }}">{{ label }}</option>
@@ -33,33 +33,81 @@
     </div>
 </div>
 
-<!-- Add Mapbox GL JS CSS and JS -->
 <link href='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css' rel='stylesheet' />
 <script src='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js'></script>
 
 <script>
-// Mapbox access token
+// Mapbox setup
 mapboxgl.accessToken = 'pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q';
-
-// Initialize the map
 var map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v11',
-    center: [33.4299, 35.1264], // Cyprus coordinates [lng, lat]
+    center: [33.4299, 35.1264],
     zoom: 7
 });
-
-// Add navigation controls
 map.addControl(new mapboxgl.NavigationControl());
 
-// Function to handle city selection change
-function cityChanged(selectElement) {
-    const cityName = selectElement.value;
+// Marker storage
+var cityMarkers = [];
+var parkingLotMarkers = [];
 
-    // Zoom to the selected city
+// Load city markers on map load
+map.on('load', function() {
+    // Get cities from dropdown options
+    const cityOptions = document.getElementById('city-select').options;
+
+    // Create markers for each city
+    for (let i = 1; i < cityOptions.length; i++) {
+        const cityName = cityOptions[i].value;
+
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.features?.length > 0) {
+                    const coordinates = data.features[0].center;
+
+                    // Create and store marker
+                    const marker = new mapboxgl.Marker({
+                        color: '#3FB1CE'
+                    })
+                    .setLngLat(coordinates)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h5>${cityName}</h5><p>Click to select</p>`))
+                    .addTo(map);
+
+                    // Make marker clickable to select city
+                    marker.getElement().addEventListener('click', () => {
+                        handleCitySelection(cityName);
+                    });
+
+                    cityMarkers.push(marker);
+                }
+            });
+    }
+});
+
+// Handle city selection (from dropdown or marker click)
+function handleCitySelection(cityName) {
+    // Update dropdown
+    document.getElementById('city-select').value = cityName;
+
+    // Remove all city markers
+    cityMarkers.forEach(marker => marker.remove());
+    cityMarkers = [];
+
+    // Zoom to city
     zoomToCity(cityName);
 
-    // Fetch parking lots for the selected city
+    // Load parking lots
+    fetchParkingLots(cityName);
+}
+
+// Fetch and display parking lots
+function fetchParkingLots(cityName) {
+    // Clear existing parking lots
+    parkingLotMarkers.forEach(marker => marker.remove());
+    parkingLotMarkers = [];
+
+    // Get parking lots from server
     fetch('/city_selected', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -70,68 +118,66 @@ function cityChanged(selectElement) {
         const parkingSelect = document.getElementById('parking-lot-select');
         parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
 
-        // Clear previous markers
-
         data.forEach(lot => {
+            // Add to dropdown
             const option = document.createElement('option');
             option.value = lot.id;
             option.textContent = lot.name;
-            option.dataset.address = lot.address; // Store address for geocoding
+            option.dataset.address = lot.address;
             parkingSelect.appendChild(option);
+
+            // Add marker
+            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lot.address + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
+                .then(response => response.json())
+                .then(geoData => {
+                    if (geoData.features?.length > 0) {
+                        const coordinates = geoData.features[0].center;
+                        const marker = new mapboxgl.Marker({
+                            color: '#FF6B6B'
+                        })
+                        .setLngLat(coordinates)
+                        .setPopup(new mapboxgl.Popup().setHTML(`<h5>${lot.name}</h5><p>${lot.address}</p>`))
+                        .addTo(map);
+
+                        parkingLotMarkers.push(marker);
+                    }
+                });
         });
 
         parkingSelect.disabled = false;
     });
 }
 
-// Function to handle parking lot selection
+// Zoom to selected city
+function zoomToCity(cityName) {
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.features?.length > 0) {
+                map.flyTo({
+                    center: data.features[0].center,
+                    zoom: 12,
+                    essential: true
+                });
+            }
+        });
+}
+
+// Handle parking lot selection
 function parkingLotSelected(selectElement) {
     const address = selectElement.options[selectElement.selectedIndex].dataset.address;
 
-    // Geocode the address using Mapbox Geocoding API
     fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
         .then(response => response.json())
         .then(data => {
-            if (data.features && data.features.length > 0) {
-                const coordinates = data.features[0].center;
-
-                // Zoom to the location
+            if (data.features?.length > 0) {
                 map.flyTo({
-                    center: coordinates,
+                    center: data.features[0].center,
                     zoom: 16
                 });
             }
         });
 }
-
-// Function to zoom to selected city
-function zoomToCity(cityName) {
-    if (!cityName) return;
-
-
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                // Find the most relevant result (usually the first one)
-                const feature = data.features[0];
-                const coordinates = feature.center;
-
-                // Fly to the location with appropriate zoom
-                map.flyTo({
-                    center: coordinates,
-                    zoom: 12, // Good city-level zoom
-                    essential: true // This ensures the animation happens
-                });
-
-
-            }
-
-        });
-}
-
-// Function to clear all markers
-
 </script>
 
 {% endblock %}
