@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from flask import Flask
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
@@ -31,3 +32,25 @@ metadata = MetaData(
 db = SQLAlchemy(app, metadata=metadata)
 migrate = Migrate(app, db)
 
+class User(db.Model, UserMixin):
+
+
+class Log(db.Model):
+
+
+class Booking(db.Model, UserMixin):
+
+
+
+class City(db.Model, UserMixin):
+
+
+class ParkingLot(db.Model, UserMixin):
+
+
+from accounts.views import accounts_bp
+from dashboard.views import dashboard_bp
+from booking.views import booking_bp
+app.register_blueprint(accounts_bp)
+app.register_blueprint(dashboard_bp)
+app.register_blueprint(booking_bp)
