@@ -24,6 +24,8 @@ def book():
         print("Form validated successfully!")
         parking_lot = ParkingLot.query.filter_by(id=form.parkingLot.data)
 
+
+        # maybe here I need to check again for parking space just in case someone books before me
         if parking_lot:
 
             newBooking = Booking(
@@ -54,8 +56,37 @@ def city_selected():
     data = request.get_json()
     city_id = data.get('city')
     parkingLots = ParkingLot.query.filter_by(city_id=city_id).all()
+
+    #bookingNumOfParkingLot = Booking.query.filter_by(city=city_id,parking).count()
+
     return jsonify([{
         'id': lot.id,
         'name': lot.address,
         'address': lot.address
     } for lot in parkingLots])
+
+
+@booking_bp.route('/check_parking_capacity', methods=['POST'])
+def check_parking_capacity():
+    data = request.get_json()
+    parkingLotId = data.get('parkingLotId')
+    parking_lot = ParkingLot.query.filter_by(id=parkingLotId).first()
+
+    numOfBookings = Booking.query.filter_by(parkinglot=parking_lot.id).count()
+    availableBookings = parking_lot.capacity - numOfBookings
+
+    if availableBookings == 0:
+        isFull = True
+
+    else:
+        isFull = False
+
+    print("Number of bookings: ", numOfBookings)
+    print("Available bookings: ", availableBookings)
+    print("Is full: ", isFull)
+
+    return jsonify({
+        'available': availableBookings,
+        'capacity': parking_lot.capacity,
+        'isFull': isFull
+    })

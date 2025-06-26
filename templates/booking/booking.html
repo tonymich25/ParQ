@@ -1,4 +1,4 @@
-{% extends 'base1.html' %}
+{% extends "base1.html" %}
 
 {% block content %}
 <div class="container">
@@ -6,7 +6,7 @@
     <div class="p-2 row">
         <div class="col-2"></div>
         <div class="col-8">
-            <form method="POST" action="{{ url_for('booking.book') }}">
+            <form method="POST" action="{{ url_for("booking.book") }}">
                 <div class="p-2 bg-light border border-primary text-left">
                     {{ form.hidden_tag() }}
                     <div class="form-group">
@@ -26,8 +26,11 @@
                         </select>
                     </div>
                 </div>
+                <div id="parking-info" class="" style="display:none"></div>
 
-                <button type="submit" class="btn btn-primary w-100">Submit</button>
+
+
+            <button type="submit" class="btn btn-primary" disabled id="submit-button">Submit</button>
             </form>
             <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
         </div>
@@ -36,17 +39,17 @@
 </div>
 
 <!-- Add Mapbox GL JS CSS and JS -->
-<link href='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css' rel='stylesheet' />
-<script src='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js'></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css" rel="stylesheet" />
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
 
 <script>
 // Mapbox access token
-mapboxgl.accessToken = 'pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q';
+mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
 
 // Initialize the map
 var map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11',
+    container: "map",
+    style: "mapbox://styles/mapbox/streets-v11",
     center: [33.4299, 35.1264], // Cyprus coordinates [lng, lat]
     zoom: 7
 });
@@ -58,25 +61,28 @@ map.addControl(new mapboxgl.NavigationControl());
 function cityChanged(selectElement) {
     const cityId = selectElement.value;
     const cityName = selectElement.options[selectElement.selectedIndex].text;
+    const parkingInfo = document.getElementById("parking-info");
+
+    parkingInfo.style.display = "none"
 
     // Zoom to the selected city
     zoomToCity(cityName);
 
     // Fetch parking lots for the selected city
-    fetch('/city_selected', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+    fetch("/city_selected", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
         body: JSON.stringify({city: cityId})
     })
     .then(response => response.json())
     .then(data => {
-        const parkingSelect = document.getElementById('parking-lot-select');
+        const parkingSelect = document.getElementById("parking-lot-select");
         parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
 
         // Clear previous markers
 
         data.forEach(lot => {
-            const option = document.createElement('option');
+            const option = document.createElement("option");
             option.value = lot.id;
             option.textContent = lot.name;
             option.dataset.address = lot.address; // Store address for geocoding
@@ -89,10 +95,44 @@ function cityChanged(selectElement) {
 
 // Function to handle parking lot selection
 function parkingLotSelected(selectElement) {
+    const parkingLotId = selectElement.value;
     const address = selectElement.options[selectElement.selectedIndex].dataset.address;
+    const submitButton = document.getElementById("submit-button");
+    const parkingInfo = document.getElementById("parking-info");
+
+
+
+
+    submitButton.disabled = true;
+
+
+
+    fetch("/check_parking_capacity", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ parkingLotId: parkingLotId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            parkingInfo.style.display = 'block';
+            if (data.isFull) {
+                parkingInfo.textContent = "No available spots left";
+                parkingInfo.className = "text-danger";
+                submitButton.disabled = true;
+            } else {
+                parkingInfo.textContent = `${data.available} spots available (of ${data.capacity})`;
+                parkingInfo.className = "text-success";
+                submitButton.disabled = false;
+            }
+        });
+
+
+
+
+
 
     // Geocode the address using Mapbox Geocoding API
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ', Cyprus')}.json?access_token=${mapboxgl.accessToken}`)
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ", Cyprus")}.json?access_token=${mapboxgl.accessToken}`)
         .then(response => response.json())
         .then(data => {
             if (data.features && data.features.length > 0) {
