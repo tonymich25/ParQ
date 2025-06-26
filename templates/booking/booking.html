@@ -25,6 +25,49 @@
                             <option value="" disabled selected hidden>Please select a city first</option>
                         </select>
                     </div>
+
+
+      <!-- Start Time -->
+<div class="form-group">
+    <label for="start-time">Start Time*</label>
+                <input type="hidden" id="start-time" name="startTime">
+
+    <div class="input-group">
+        <select class="form-control hour-select" name="startHour" required>
+            {% for i in range(7, 24) %}
+                <option value="{{ h }}">{{ "%02d"|format(h) }}</option>
+            {% endfor %}
+        </select>
+        <select class="form-control minute-select" name="startMinute" required>
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+        </select>
+    </div>
+</div>
+
+<!-- End Time -->
+<div class="form-group">
+    <label for="end-time">End Time*</label>
+<input type="hidden" id="end-time" name="endTime">
+
+    <div class="input-group">
+        <select class="form-control hour-select" name="endHour" required>
+            {% for i in range(7, 24) %}
+                <option value="{{ h }}">{{ "%02d"|format(h) }}</option>
+            {% endfor %}
+        </select>
+        <select class="form-control minute-select" name="endMinute" required>
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+        </select>
+    </div>
+</div>
+
+
                 </div>
                 <div id="parking-info" class="" style="display:none"></div>
 
@@ -56,6 +99,17 @@ var map = new mapboxgl.Map({
 
 // Add navigation controls
 map.addControl(new mapboxgl.NavigationControl());
+
+document.querySelector('form').addEventListener('submit', function(e) {
+    // Combine hour + minute into startTime/endTime fields
+    const startHour = document.querySelector('[name="startHour"]').value;
+    const startMinute = document.querySelector('[name="startMinute"]').value;
+    document.getElementById('start-time').value = `${startHour}:${startMinute}`;
+
+    const endHour = document.querySelector('[name="endHour"]').value;
+    const endMinute = document.querySelector('[name="endMinute"]').value;
+    document.getElementById('end-time').value = `${endHour}:${endMinute}`;
+});
 
 // Function to handle city selection change
 function cityChanged(selectElement) {

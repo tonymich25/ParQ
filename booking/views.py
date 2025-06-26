@@ -31,8 +31,12 @@ def book():
             newBooking = Booking(
                 userid = current_user.get_id(),
                 city = form.city.data,
-                parkinglot = form.parkingLot.data
+                parkinglot = form.parkingLot.data,
+                startTime = form.startTime.data,
+                endTime = form.endTime.data,
             )
+
+            print("BOOKING SUCCEFULLY ADDED")
 
             db.session.add(newBooking)
             db.session.commit()

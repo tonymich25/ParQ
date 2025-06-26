@@ -163,12 +163,16 @@ class Booking(db.Model, UserMixin):
     timeBooked = db.Column(db.DateTime, default=datetime.now, nullable=False)
     city = db.Column(db.Text, nullable=False)
     parkinglot = db.Column(db.Text, nullable=False)
+    startTime = db.Column(db.Text, nullable=False)
+    endTime = db.Column(db.Text, nullable=False)
     #numplate = db.Column(db.Text, nullable=False)
 
-    def __init__(self, userid, city, parkinglot):
+    def __init__(self, userid, city, parkinglot, startTime, endTime):
         self.userid = userid
         self.city = city
         self.parkinglot = parkinglot
+        self.startTime = startTime
+        self.endTime = endTime
 
 
 class City(db.Model, UserMixin):
