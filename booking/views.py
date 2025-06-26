@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from booking.forms import BookingForm
-from config import City, db, ParkingLot
+from config import City, db, ParkingLot, Booking
 
 booking_bp = Blueprint('booking', __name__, template_folder='templates')
 
@@ -21,25 +21,31 @@ def book():
     print(f"Errors: {form.errors}")
 
     if form.validate_on_submit():
-        selected_city = form.city.data
-        selected_parking_lot = form.parkingLot.data
-        print(f"City ID: {selected_city}, Parking Lot ID: {selected_parking_lot}")
-
-
-
+        print("Form validated successfully!")
         parking_lot = ParkingLot.query.filter_by(id=form.parkingLot.data)
+
+        if parking_lot:
+
+            newBooking = Booking(
+                userid = current_user.get_id(),
+                city = form.city.data,
+                parkinglot = form.parkingLot.data
+            )
+
+            db.session.add(newBooking)
+            db.session.commit()
+
 
         # USE THIS!
         if not parking_lot:  # Manual check
-            flash("Invalid parking lot selected", "error")
+            #flash("Invalid parking lot selected", "error")
             return redirect(url_for('booking.book'))
 
 
         # Proceed with booking
 
-        print("Form validated successfully!")
 
-        return redirect(url_for('booking.book'))
+        return redirect(url_for('dashboard.dashboard'))
 
     return render_template('booking/booking.html', form=form)
 
