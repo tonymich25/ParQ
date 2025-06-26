@@ -183,7 +183,8 @@ class ParkingLot(db.Model, UserMixin):
     __tablename__ = 'parking_lots'
     id = db.Column(db.Integer, primary_key=True)
     city_id = db.Column(db.Integer, db.ForeignKey('cities.id'))
-    address = db.Column(db.String(100))
+    address = db.Column(db.String(100), nullable=False)
+    capacity = db.Column(db.Integer, nullable=False)
 
 
 from accounts.views import accounts_bp, passwordHasher
