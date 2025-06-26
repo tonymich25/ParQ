@@ -161,9 +161,14 @@ class Booking(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     timeBooked = timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
-    location = db.Column(db.Text, nullable=False)
-    parkingspotid = db.Column(db.Text, nullable=False)
-    numplate = db.Column(db.Text, nullable=False)
+    city = db.Column(db.Text, nullable=False)
+    parkinglot = db.Column(db.Text, nullable=False)
+    #numplate = db.Column(db.Text, nullable=False)
+
+    def __init__(self, userid, city, parkinglot):
+        self.userid = userid
+        self.city = city
+        self.parkinglot = parkinglot
 
 
 class City(db.Model, UserMixin):
