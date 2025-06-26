@@ -22,7 +22,7 @@ app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-
+#WTF_CSRF_ENABLED = False  # Disable for this test ONLY
 
 
 
@@ -160,6 +160,7 @@ class Booking(db.Model, UserMixin):
 
     id = db.Column(db.Integer, primary_key=True)
     userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    timeBooked = timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False)
     location = db.Column(db.Text, nullable=False)
     parkingspotid = db.Column(db.Text, nullable=False)
     numplate = db.Column(db.Text, nullable=False)
