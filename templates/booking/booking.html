@@ -1,3 +1,4 @@
+
 {% extends "base1.html" %}
 
 {% block content %}
@@ -35,7 +36,7 @@
     <div class="input-group">
         <select class="form-control hour-select" name="startHour" required>
             {% for i in range(7, 24) %}
-                <option value="{{ h }}">{{ "%02d"|format(h) }}</option>
+                <option value="{{ i }}">{{ i }}</option>
             {% endfor %}
         </select>
         <select class="form-control minute-select" name="startMinute" required>
@@ -55,7 +56,7 @@
     <div class="input-group">
         <select class="form-control hour-select" name="endHour" required>
             {% for i in range(7, 24) %}
-                <option value="{{ h }}">{{ "%02d"|format(h) }}</option>
+                <option value="{{ i }}">{{ i }}</option>
             {% endfor %}
         </select>
         <select class="form-control minute-select" name="endMinute" required>
@@ -100,6 +101,43 @@ var map = new mapboxgl.Map({
 // Add navigation controls
 map.addControl(new mapboxgl.NavigationControl());
 
+
+const submitButton = document.getElementById("submit-button");
+
+function validateBookingTime(bool) {
+    const startHour = parseInt(document.querySelector('[name="startHour"]').value);
+    const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
+    const endHour = parseInt(document.querySelector('[name="endHour"]').value);
+    const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
+
+    // Check if end time is before start time
+    if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
+        submitButton.disabled = true;
+        // Optional: show error message
+
+        if (bool != true){
+
+            if (!document.getElementById("time-error")) {
+                const errorDiv = document.createElement("div");
+                errorDiv.id = "time-error";
+                errorDiv.className = "text-danger mt-2";
+                errorDiv.textContent = "End time must be after start time";
+                document.querySelector('.form-group:last-child').appendChild(errorDiv);
+            }
+        }
+    } else {
+        submitButton.disabled = false;
+        const errorDiv = document.getElementById("time-error");
+        if (errorDiv) errorDiv.remove();
+    }
+}
+
+// Add event listeners to time selects
+document.querySelectorAll('[name="startHour"], [name="startMinute"], [name="endHour"], [name="endMinute"]').forEach(select => {
+    select.addEventListener('change', validateBookingTime);
+});
+
+// Modify your form submit handler
 document.querySelector('form').addEventListener('submit', function(e) {
     // Combine hour + minute into startTime/endTime fields
     const startHour = document.querySelector('[name="startHour"]').value;
@@ -109,6 +147,14 @@ document.querySelector('form').addEventListener('submit', function(e) {
     const endHour = document.querySelector('[name="endHour"]').value;
     const endMinute = document.querySelector('[name="endMinute"]').value;
     document.getElementById('end-time').value = `${endHour}:${endMinute}`;
+
+    // Validate again on submit
+    validateBookingTime();
+
+    // Prevent submission if validation fails
+    if (submitButton.disabled) {
+        e.preventDefault();
+    }
 });
 
 // Function to handle city selection change
@@ -151,7 +197,6 @@ function cityChanged(selectElement) {
 function parkingLotSelected(selectElement) {
     const parkingLotId = selectElement.value;
     const address = selectElement.options[selectElement.selectedIndex].dataset.address;
-    const submitButton = document.getElementById("submit-button");
     const parkingInfo = document.getElementById("parking-info");
 
 
@@ -172,11 +217,13 @@ function parkingLotSelected(selectElement) {
             if (data.isFull) {
                 parkingInfo.textContent = "No available spots left";
                 parkingInfo.className = "text-danger";
-                submitButton.disabled = true;
+                bool = true;
+                validateBookingTime(bool);
             } else {
                 parkingInfo.textContent = `${data.available} spots available (of ${data.capacity})`;
                 parkingInfo.className = "text-success";
-                submitButton.disabled = false;
+                bool = true;
+                validateBookingTime(bool);
             }
         });
 
