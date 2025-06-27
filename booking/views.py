@@ -1,3 +1,5 @@
+import datetime
+
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 from flask_login import login_required, current_user
 
@@ -27,13 +29,16 @@ def book():
 
         # maybe here I need to check again for parking space just in case someone books before me
         if parking_lot:
+            startTimeFormatted = datetime.datetime.strptime(form.startTime.data, "%H:%M").time()
+            endTimeFormatted = datetime.datetime.strptime(form.endTime.data, "%H:%M").time()
+
 
             newBooking = Booking(
                 userid = current_user.get_id(),
                 city = form.city.data,
                 parkinglot = form.parkingLot.data,
-                startTime = form.startTime.data,
-                endTime = form.endTime.data,
+                startTime = startTimeFormatted,
+                endTime = endTimeFormatted,
             )
 
             print("BOOKING SUCCEFULLY ADDED")
