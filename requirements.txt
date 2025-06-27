@@ -16,7 +16,7 @@ Flask-WTF
 Flask-Admin
 WTForms
 Jinja2
-psycopg2-binary
+psycopg2-binary==2.9.5
 Flask-Migrate
 
 dotenv
