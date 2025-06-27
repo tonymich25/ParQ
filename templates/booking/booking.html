@@ -1,15 +1,64 @@
-
 {% extends "base1.html" %}
 
 {% block content %}
+<style>
+    /* Styling for the SVG parking spots */
+    .parking-spot-rect {
+        stroke-width: 5;
+        stroke-opacity: 0.8;
+        transition: fill 0.3s ease, stroke 0.3s ease;
+        cursor: pointer;
+    }
+
+    .parking-spot-rect.available {
+        fill: #28a745; /* Green */
+        stroke: #208338;
+        fill-opacity: 0.5;
+    }
+
+    .parking-spot-rect.available:hover {
+        fill-opacity: 0.7;
+    }
+
+    .parking-spot-rect.taken {
+        fill: #dc3545; /* Red */
+        stroke: #b32a38;
+        fill-opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .parking-spot-rect.selected {
+        stroke: #007bff; /* Blue */
+        stroke-width: 8;
+        stroke-opacity: 1;
+    }
+    .parking-lot-container {
+        display: none; /* Hidden by default */
+        margin-top: 15px;
+        max-width: 720px;
+        width: 100%;
+        border: 1px solid #ccc;
+        padding: 10px;
+        border-radius: 5px;
+    }
+</style>
+
 <div class="container">
     <h1>Book your spot</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
     <div class="p-2 row">
         <div class="col-2"></div>
         <div class="col-8">
-            <form method="POST" action="{{ url_for("booking.book") }}">
+            <form method="POST" action="{{ url_for('booking.book') }}" id="booking-form">
                 <div class="p-2 bg-light border border-primary text-left">
                     {{ form.hidden_tag() }}
+                    <!-- City and Parking Lot Selectors -->
                     <div class="form-group">
                         {{ form.city.label }}<span class="text-danger">*</span>
                         <select class="form-control" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
@@ -19,263 +68,226 @@
                             {% endfor %}
                         </select>
                     </div>
-
                     <div class="form-group">
                         {{ form.parkingLot.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected(this)">
+                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected()">
                             <option value="" disabled selected hidden>Please select a city first</option>
                         </select>
                     </div>
 
+                    <!-- SVG Parking Lot Display -->
+                    <div id="parking-lot-container" class="parking-lot-container">
+                        <p id="parking-lot-status" class="font-weight-bold text-center"></p>
+                        <svg id="parking-svg" viewBox="0 0 720 720" xmlns="http://www.w3.org/2000/svg">
+                            <image id="parking-image" href="" x="0" y="0" width="100%" height="100%"></image>
+                            <g id="spot-rects-group"></g> <!-- Group to hold the spot rectangles -->
+                        </svg>
+                    </div>
+                    <!-- Hidden input to store the selected spot's ID -->
+                    <input type="hidden" name="spotId" id="selected-spot-id">
 
-      <!-- Start Time -->
-<div class="form-group">
-    <label for="start-time">Start Time*</label>
-                <input type="hidden" id="start-time" name="startTime">
-
-    <div class="input-group">
-        <select class="form-control hour-select" name="startHour" required>
-            {% for i in range(7, 24) %}
-                <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-        </select>
-        <select class="form-control minute-select" name="startMinute" required>
-            <option value="00">00</option>
-            <option value="15">15</option>
-            <option value="30">30</option>
-            <option value="45">45</option>
-        </select>
-    </div>
-</div>
-
-<!-- End Time -->
-<div class="form-group">
-    <label for="end-time">End Time*</label>
-<input type="hidden" id="end-time" name="endTime">
-
-    <div class="input-group">
-        <select class="form-control hour-select" name="endHour" required>
-            {% for i in range(7, 24) %}
-                <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-        </select>
-        <select class="form-control minute-select" name="endMinute" required>
-            <option value="00">00</option>
-            <option value="15">15</option>
-            <option value="30">30</option>
-            <option value="45">45</option>
-        </select>
-    </div>
-</div>
+                    <!-- Hidden fields for WTForms validation -->
+                    <input type="hidden" id="start-time-hidden" name="startTime">
+                    <input type="hidden" id="end-time-hidden" name="endTime">
 
 
+                    <!-- Time Selection -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="start-time">Start Time*</label>
+                                <div class="input-group">
+                                    <select class="form-control hour-select" name="startHour" required onchange="fetchSpotStatus()">
+                                        {% for i in range(7, 24) %}<option value="{{ i }}">{{ "%02d"|format(i) }}</option>{% endfor %}
+                                    </select>
+                                    <select class="form-control minute-select" name="startMinute" required onchange="fetchSpotStatus()">
+                                        <option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="end-time">End Time*</label>
+                                <div class="input-group">
+                                    <select class="form-control hour-select" name="endHour" required onchange="fetchSpotStatus()">
+                                        {% for i in range(7, 24) %}<option value="{{ i }}">{{ "%02d"|format(i) }}</option>{% endfor %}
+                                    </select>
+                                    <select class="form-control minute-select" name="endMinute" required onchange="fetchSpotStatus()">
+                                        <option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="time-error" class="text-danger mt-2"></div>
                 </div>
-                <div id="parking-info" class="" style="display:none"></div>
 
-
-
-            <button type="submit" class="btn btn-primary" disabled id="submit-button">Submit</button>
+                <button type="submit" class="btn btn-primary mt-3" disabled id="submit-button">Submit Booking</button>
             </form>
-            <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
         </div>
         <div class="col-2"></div>
     </div>
 </div>
 
-<!-- Add Mapbox GL JS CSS and JS -->
-<link href="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css" rel="stylesheet" />
-<script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
-
 <script>
-// Mapbox access token
-mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
+    // --- JAVASCRIPT LOGIC ---
 
-// Initialize the map
-var map = new mapboxgl.Map({
-    container: "map",
-    style: "mapbox://styles/mapbox/streets-v11",
-    center: [33.4299, 35.1264], // Cyprus coordinates [lng, lat]
-    zoom: 7
-});
+    const citySelect = document.getElementById('city-select');
+    const parkingLotSelect = document.getElementById('parking-lot-select');
+    const parkingLotContainer = document.getElementById('parking-lot-container');
+    const parkingImage = document.getElementById('parking-image');
+    const spotRectsGroup = document.getElementById('spot-rects-group');
+    const selectedSpotIdInput = document.getElementById('selected-spot-id');
+    const submitButton = document.getElementById('submit-button');
 
-// Add navigation controls
-map.addControl(new mapboxgl.NavigationControl());
+    function cityChanged(selectElement) {
+        const cityId = selectElement.value;
+        parkingLotContainer.style.display = 'none';
+        spotRectsGroup.innerHTML = '';
+        selectedSpotIdInput.value = '';
+        updateFormState();
 
-
-const submitButton = document.getElementById("submit-button");
-
-function validateBookingTime(bool) {
-    const startHour = parseInt(document.querySelector('[name="startHour"]').value);
-    const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
-    const endHour = parseInt(document.querySelector('[name="endHour"]').value);
-    const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
-
-    // Check if end time is before start time
-    if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
-        submitButton.disabled = true;
-        // Optional: show error message
-
-        if (bool != true){
-
-            if (!document.getElementById("time-error")) {
-                const errorDiv = document.createElement("div");
-                errorDiv.id = "time-error";
-                errorDiv.className = "text-danger mt-2";
-                errorDiv.textContent = "End time must be after start time";
-                document.querySelector('.form-group:last-child').appendChild(errorDiv);
-            }
-        }
-    } else {
-        submitButton.disabled = false;
-        const errorDiv = document.getElementById("time-error");
-        if (errorDiv) errorDiv.remove();
-    }
-}
-
-// Add event listeners to time selects
-document.querySelectorAll('[name="startHour"], [name="startMinute"], [name="endHour"], [name="endMinute"]').forEach(select => {
-    select.addEventListener('change', validateBookingTime);
-});
-
-// Modify your form submit handler
-document.querySelector('form').addEventListener('submit', function(e) {
-    // Combine hour + minute into startTime/endTime fields
-    const startHour = document.querySelector('[name="startHour"]').value;
-    const startMinute = document.querySelector('[name="startMinute"]').value;
-    document.getElementById('start-time').value = `${startHour}:${startMinute}`;
-
-    const endHour = document.querySelector('[name="endHour"]').value;
-    const endMinute = document.querySelector('[name="endMinute"]').value;
-    document.getElementById('end-time').value = `${endHour}:${endMinute}`;
-
-    // Validate again on submit
-    validateBookingTime();
-
-    // Prevent submission if validation fails
-    if (submitButton.disabled) {
-        e.preventDefault();
-    }
-});
-
-// Function to handle city selection change
-function cityChanged(selectElement) {
-    const cityId = selectElement.value;
-    const cityName = selectElement.options[selectElement.selectedIndex].text;
-    const parkingInfo = document.getElementById("parking-info");
-
-    parkingInfo.style.display = "none"
-
-    // Zoom to the selected city
-    zoomToCity(cityName);
-
-    // Fetch parking lots for the selected city
-    fetch("/city_selected", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({city: cityId})
-    })
-    .then(response => response.json())
-    .then(data => {
-        const parkingSelect = document.getElementById("parking-lot-select");
-        parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
-
-        // Clear previous markers
-
-        data.forEach(lot => {
-            const option = document.createElement("option");
-            option.value = lot.id;
-            option.textContent = lot.name;
-            option.dataset.address = lot.address; // Store address for geocoding
-            parkingSelect.appendChild(option);
-        });
-
-        parkingSelect.disabled = false;
-    });
-}
-
-// Function to handle parking lot selection
-function parkingLotSelected(selectElement) {
-    const parkingLotId = selectElement.value;
-    const address = selectElement.options[selectElement.selectedIndex].dataset.address;
-    const parkingInfo = document.getElementById("parking-info");
-
-
-
-
-    submitButton.disabled = true;
-
-
-
-    fetch("/check_parking_capacity", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ parkingLotId: parkingLotId })
+        fetch("/city_selected", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ city: cityId })
         })
         .then(response => response.json())
         .then(data => {
-            parkingInfo.style.display = 'block';
-            if (data.isFull) {
-                parkingInfo.textContent = "No available spots left";
-                parkingInfo.className = "text-danger";
-                bool = true;
-                validateBookingTime(bool);
-            } else {
-                parkingInfo.textContent = `${data.available} spots available (of ${data.capacity})`;
-                parkingInfo.className = "text-success";
-                bool = true;
-                validateBookingTime(bool);
-            }
+            parkingLotSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
+            data.forEach(lot => {
+                const option = document.createElement("option");
+                option.value = lot.id;
+                option.textContent = lot.name;
+                parkingLotSelect.appendChild(option);
+            });
+            parkingLotSelect.disabled = false;
         });
+    }
 
+    function parkingLotSelected() {
+        const parkingLotId = parkingLotSelect.value;
+        if (!parkingLotId) {
+            parkingLotContainer.style.display = 'none';
+            return;
+        }
+        fetchSpotStatus();
+    }
 
+    function getTimeValues() {
+        const startHour = document.querySelector('[name="startHour"]').value.padStart(2, '0');
+        const startMinute = document.querySelector('[name="startMinute"]').value.padStart(2, '0');
+        const endHour = document.querySelector('[name="endHour"]').value.padStart(2, '0');
+        const endMinute = document.querySelector('[name="endMinute"]').value.padStart(2, '0');
 
+        return {
+            startTime: `${startHour}:${startMinute}`,
+            endTime: `${endHour}:${endMinute}`,
+            isTimeValid: (parseInt(endHour) > parseInt(startHour)) || (parseInt(endHour) === parseInt(startHour) && parseInt(endMinute) > parseInt(startMinute))
+        };
+    }
 
+    function fetchSpotStatus() {
+        const parkingLotId = parkingLotSelect.value;
+        const { startTime, endTime, isTimeValid } = getTimeValues();
 
+        const errorDiv = document.getElementById("time-error");
+        errorDiv.textContent = isTimeValid ? "" : "End time must be after start time.";
 
-    // Geocode the address using Mapbox Geocoding API
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ", Cyprus")}.json?access_token=${mapboxgl.accessToken}`)
+        if (!parkingLotId || !isTimeValid) {
+            updateFormState();
+            return;
+        }
+
+        parkingLotContainer.style.display = 'block';
+        document.getElementById('parking-lot-status').textContent = 'Checking availability...';
+        selectedSpotIdInput.value = '';
+        updateFormState();
+
+        fetch('/check_spot_availability', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                parkingLotId: parkingLotId,
+                startTime: startTime,
+                endTime: endTime
+            })
+        })
         .then(response => response.json())
         .then(data => {
-            if (data.features && data.features.length > 0) {
-                const coordinates = data.features[0].center;
-
-                // Zoom to the location
-                map.flyTo({
-                    center: coordinates,
-                    zoom: 16
-                });
-            }
+            renderParkingSpots(data);
+        })
+        .catch(error => {
+            console.error('Error fetching spot status:', error);
+            document.getElementById('parking-lot-status').textContent = 'Error loading spots.';
         });
-}
+    }
 
-// Function to zoom to selected city
-function zoomToCity(cityName) {
-    if (!cityName) return;
+    function renderParkingSpots(data) {
+        parkingImage.setAttribute('href', `/static/images/${data.image_filename}`);
 
+        spotRectsGroup.innerHTML = '';
 
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                // Find the most relevant result (usually the first one)
-                const feature = data.features[0];
-                const coordinates = feature.center;
+        let availableCount = 0;
+        data.spots.forEach(spot => {
+            if (spot.is_available) availableCount++;
 
-                // Fly to the location with appropriate zoom
-                map.flyTo({
-                    center: coordinates,
-                    zoom: 12, // Good city-level zoom
-                    essential: true // This ensures the animation happens
-                });
+            const [x, y, width, height] = spot.svg_coords.split(',');
 
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', x);
+            rect.setAttribute('y', y);
+            rect.setAttribute('width', width);
+            rect.setAttribute('height', height);
+            rect.setAttribute('id', `spot-${spot.id}`);
+            rect.classList.add('parking-spot-rect');
+            rect.classList.toggle('available', spot.is_available);
+            rect.classList.toggle('taken', !spot.is_available);
 
+            if (spot.is_available) {
+                rect.addEventListener('click', () => handleSpotClick(spot.id));
             }
-
+            spotRectsGroup.appendChild(rect);
         });
-}
 
-// Function to clear all markers
+        document.getElementById('parking-lot-status').textContent = `${availableCount} of ${data.spots.length} spots available`;
+        updateFormState();
+    }
+
+    function handleSpotClick(spotId) {
+        const currentSelectedId = selectedSpotIdInput.value;
+
+        const prevSelected = document.querySelector('.parking-spot-rect.selected');
+        if(prevSelected) {
+            prevSelected.classList.remove('selected');
+        }
+
+        if (currentSelectedId !== String(spotId)) {
+            selectedSpotIdInput.value = spotId;
+            document.getElementById(`spot-${spotId}`).classList.add('selected');
+        } else {
+            selectedSpotIdInput.value = '';
+        }
+
+        updateFormState();
+    }
+
+    function updateFormState() {
+        const { isTimeValid } = getTimeValues();
+        const parkingLotSelected = !!parkingLotSelect.value;
+        const spotSelected = !!selectedSpotIdInput.value;
+
+        submitButton.disabled = !(isTimeValid && parkingLotSelected && spotSelected);
+    }
+
+    document.getElementById('booking-form').addEventListener('submit', function(e) {
+        const { startTime, endTime } = getTimeValues();
+        document.getElementById('start-time-hidden').value = startTime;
+        document.getElementById('end-time-hidden').value = endTime;
+    });
+
+    document.addEventListener('DOMContentLoaded', updateFormState);
 
 </script>
-
 {% endblock %}
