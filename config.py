@@ -103,15 +103,15 @@ class Booking(db.Model, UserMixin):
     userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     spot_id = db.Column(db.Integer, db.ForeignKey('parking_spots.id'), nullable=False)
     timeBooked = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    bookingDate = db.Column(db.Date, nullable=False)
     startTime = db.Column(db.Time, nullable=False)
     endTime = db.Column(db.Time, nullable=False)
-
-    # Relationships
     parking_spot = db.relationship('ParkingSpot', back_populates='bookings')
 
-    def __init__(self, userid, spot_id, startTime, endTime):
+    def __init__(self, userid, spot_id, bookingDate, startTime, endTime):
         self.userid = userid
         self.spot_id = spot_id
+        self.bookingDate = bookingDate
         self.startTime = startTime
         self.endTime = endTime
 
@@ -135,9 +135,9 @@ class ParkingLot(db.Model, UserMixin):
 class ParkingSpot(db.Model, UserMixin):
     __tablename__ = 'parking_spots'
     id = db.Column(db.Integer, primary_key=True)
-    parking_lot_id = db.Column(db.Integer, db.ForeignKey('parking_lots.id'), nullable=False)
-    spot_number = db.Column(db.String(20), nullable=False)
-    svg_coords = db.Column(db.String(100), nullable=False)
+    parkingLotId = db.Column(db.Integer, db.ForeignKey('parking_lots.id'), nullable=False)
+    spotNumber = db.Column(db.String(20), nullable=False)
+    svgCoords = db.Column(db.String(100), nullable=False)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
 
