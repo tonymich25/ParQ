@@ -1,6 +1,6 @@
 # Flask Framework Packages
 click
-Flask
+Flask~=3.1.1
 itsdangerous
 Jinja2
 MarkupSafe
@@ -8,15 +8,18 @@ Werkzeug
 argon2-cffi
 
 # Flask Functionality Packages
-Flask-Login
-Flask-Migrate
+Flask-Login~=0.6.3
+Flask-Migrate~=4.1.0
 Flask-Script
 Flask-SQLAlchemy
 Flask-WTF
-Flask-Admin
-WTForms
+Flask-Admin~=1.6.1
+WTForms~=3.2.1
 Jinja2
 psycopg2-binary==2.9.5
 Flask-Migrate
 
-dotenv
+dotenv~=0.9.9
+python-dotenv~=1.1.1
+sqlalchemy~=2.0.41
+alembic~=1.16.2
