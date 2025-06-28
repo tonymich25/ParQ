@@ -1,10 +1,257 @@
 {% extends "base2.html" %}
 
+{% block extra_styles %}
+<style>
+  .dashboard-header {
+    background: linear-gradient(135deg, #4361ee 0%, #4cc9f0 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dashboard-header::before {
+    content: "";
+    position: absolute;
+    top: -50px;
+    right: -50px;
+    width: 200px;
+    height: 200px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+  }
+
+  .dashboard-title {
+    font-weight: 700;
+    position: relative;
+    z-index: 2;
+  }
+
+  .booking-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: transform 0.3s ease;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+
+  .booking-card:hover {
+    transform: translateY(-5px);
+  }
+
+  .booking-card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+  }
+
+  .booking-card-body {
+    padding: 1.5rem;
+  }
+
+  .booking-detail {
+    display: flex;
+    margin-bottom: 0.75rem;
+    align-items: center;
+  }
+
+  .booking-detail i {
+    width: 24px;
+    color: #4361ee;
+    margin-right: 10px;
+    text-align: center;
+  }
+
+  .booking-status {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .status-active {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-upcoming {
+    background-color: #e0f2fe;
+    color: #075985;
+  }
+
+  .no-bookings {
+    text-align: center;
+    padding: 3rem;
+    background-color: #f8f9fa;
+    border-radius: 12px;
+  }
+
+  .no-bookings-icon {
+    font-size: 3rem;
+    color: #adb5bd;
+    margin-bottom: 1rem;
+  }
+
+  .cta-button {
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cta-button i {
+    margin-right: 8px;
+  }
+
+  .map-mini {
+    height: 150px;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
+<div class="container py-4">
+  <!-- Dashboard Header -->
+  <div class="dashboard-header">
+    <div class="row align-items-center">
+      <div class="col-md-8">
+        <h1 class="dashboard-title mb-3">Your Parking Dashboard</h1>
+        <p class="mb-0">View and manage your upcoming parking reservations</p>
+      </div>
+      <div class="col-md-4 text-md-end">
+        <a href="{{ url_for('booking.book') }}" class="btn btn-light cta-button">
+          <i class="bi bi-plus-circle"></i> Book New Spot
+        </a>
+      </div>
+    </div>
+  </div>
 
+  <!-- Current Booking Section -->
+  <div class="mb-4">
+    <h3 class="mb-3"><i class="bi bi-car-front-fill text-primary me-2"></i>Active & Upcoming Bookings</h3>
 
-<h1>FAWFAWf</h1>
+    {% if bookings %}
+      {% for booking in bookings %}
+      <div class="booking-card">
+        <div class="booking-card-header d-flex justify-content-between align-items-center">
+          <div>
+            <span class="booking-status {% if booking.is_active %}status-active{% else %}status-upcoming{% endif %}">
+              {% if booking.is_active %}
+                <i class="bi bi-check-circle-fill me-1"></i> Active Now
+              {% else %}
+                <i class="bi bi-clock-fill me-1"></i> Upcoming
+              {% endif %}
+            </span>
+          </div>
+          <div>
+            <small class="text-muted">Booking #{{ booking.id }}</small>
+          </div>
+        </div>
+        <div class="booking-card-body">
+          <div class="row">
+            <div class="col-md-8">
+              <div class="booking-detail">
+                <i class="bi bi-geo-alt-fill"></i>
+                <div>
+                  <h5 class="mb-1">{{ booking.parking_lot.name }}</h5>
+                  <p class="mb-0 text-muted">{{ booking.parking_lot.address }}</p>
+                </div>
+              </div>
 
-    <a class="nav-item nav-link" href="{{ url_for('booking.booking') }}">Book Parking</a>
+              <div class="booking-detail">
+                <i class="bi bi-calendar-event"></i>
+                <div>
+                  <strong>Date:</strong> {{ booking.booking_date.strftime('%A, %B %d, %Y') }}
+                </div>
+              </div>
 
+              <div class="booking-detail">
+                <i class="bi bi-clock"></i>
+                <div>
+                  <strong>Time:</strong> {{ booking.start_time.strftime('%I:%M %p') }} - {{ booking.end_time.strftime('%I:%M %p') }}
+                </div>
+              </div>
+
+              <div class="booking-detail">
+                <i class="bi bi-p-square"></i>
+                <div>
+                  <strong>Spot:</strong> #{{ booking.spot_id }} ({{ booking.spot_type }})
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <a href="#" class="btn btn-outline-primary btn-sm me-2">
+                  <i class="bi bi-info-circle"></i> Details
+                </a>
+                <a href="#" class="btn btn-outline-danger btn-sm">
+                  <i class="bi bi-trash"></i> Cancel
+                </a>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="map-mini" id="map-{{ booking.id }}"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="no-bookings">
+        <div class="no-bookings-icon">
+          <i class="bi bi-calendar-x"></i>
+        </div>
+        <h4 class="mb-3">No Upcoming Bookings</h4>
+        <p class="text-muted mb-4">You don't have any active or upcoming parking reservations</p>
+        <a href="{{ url_for('booking.book') }}" class="btn btn-primary cta-button">
+          <i class="bi bi-plus-circle"></i> Book Your First Spot
+        </a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent History Section -->
+  <div class="mb-4">
+    <h3 class="mb-3"><i class="bi bi-clock-history text-primary me-2"></i>Recent Parking History</h3>
+    <div class="alert alert-info">
+      <i class="bi bi-info-circle-fill me-2"></i>Your recent parking history will appear here
+    </div>
+  </div>
+</div>
+
+<!-- Mapbox JS -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
+<script>
+  // Initialize maps for each booking
+  mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
+
+  document.addEventListener('DOMContentLoaded', function() {
+    {% if bookings %}
+      {% for booking in bookings %}
+        // Initialize map for booking {{ booking.id }}
+        const map{{ booking.id }} = new mapboxgl.Map({
+          container: 'map-{{ booking.id }}',
+          style: 'mapbox://styles/mapbox/streets-v11',
+          center: [{{ booking.parking_lot.longitude }}, {{ booking.parking_lot.latitude }}],
+          zoom: 14,
+          interactive: false
+        });
+
+        // Add marker
+        new mapboxgl.Marker({ color: '#4361ee' })
+          .setLngLat([{{ booking.parking_lot.longitude }}, {{ booking.parking_lot.latitude }}])
+          .addTo(map{{ booking.id }});
+      {% endfor %}
+    {% endif %}
+  });
+</script>
 {% endblock %}
