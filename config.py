@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import stripe
 from dotenv import load_dotenv
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -20,6 +21,11 @@ app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
 # Initialising Login Manager
 login_manager = LoginManager()
 login_manager.init_app(app)
+
+
+STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
+stripe.api_key = STRIPE_SECRET_KEY
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -106,14 +112,16 @@ class Booking(db.Model, UserMixin):
     bookingDate = db.Column(db.Date, nullable=False)
     startTime = db.Column(db.Time, nullable=False)
     endTime = db.Column(db.Time, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
     parking_spot = db.relationship('ParkingSpot', back_populates='bookings')
 
-    def __init__(self, userid, spot_id, bookingDate, startTime, endTime):
+    def __init__(self, userid, spot_id, bookingDate, startTime, endTime, amount):
         self.userid = userid
         self.spot_id = spot_id
         self.bookingDate = bookingDate
         self.startTime = startTime
         self.endTime = endTime
+        self.amount = amount
 
 
 class City(db.Model, UserMixin):
@@ -138,6 +146,7 @@ class ParkingSpot(db.Model, UserMixin):
     parkingLotId = db.Column(db.Integer, db.ForeignKey('parking_lots.id'), nullable=False)
     spotNumber = db.Column(db.String(20), nullable=False)
     svgCoords = db.Column(db.String(100), nullable=False)
+    pricePerHour = db.Column(db.Float, nullable=False)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
 
