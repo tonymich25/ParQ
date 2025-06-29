@@ -35,6 +35,7 @@ def book():
         # Final check for availability before committing
         conflicting_bookings = Booking.query.filter(
         Booking.spot_id == spotId,
+        Booking.bookingDate == form.bookingDate.data,
         Booking.startTime < endTimeFormatted,
         Booking.endTime > startTimeFormatted).count()
 
@@ -93,8 +94,7 @@ def city_selected():
     return jsonify([{
         'id': lot.id,
         'name': lot.name,
-        'address': lot.address
-    } for lot in parkingLots])
+        'address': lot.address} for lot in parkingLots])
 
 
 @booking_bp.route('/check_spot_availability', methods=['POST'])
@@ -171,7 +171,7 @@ def payment_success():
         encrypted = cipher.encrypt(str(new_booking.id).encode()).decode()
 
         img = qrcode.make(encrypted)
-        img.save("person_qr.png")
+        img.save(f"qrcodes/{new_booking.id}.png")
 
 
         flash("Your booking and payment were successful!", "success")
@@ -185,10 +185,3 @@ def payment_success():
         current_app.logger.error(f"Unexpected error: {str(e)}")
         flash("Error processing your booking. Please contact support.", "error")
         return redirect(url_for('booking.book'))
-
-
-
-@booking_bp.route('/payment_cancel', methods=['GET'])
-def payment_cancel():
-    flash("Payment was cancelled. You can try again.", "warning")
-    return redirect(url_for('booking.book'))

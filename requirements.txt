@@ -23,3 +23,4 @@ dotenv~=0.9.9
 python-dotenv~=1.1.1
 sqlalchemy~=2.0.41
 alembic~=1.16.2
+stripe

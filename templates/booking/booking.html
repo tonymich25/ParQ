@@ -485,8 +485,6 @@
     positionOptions: {
       enableHighAccuracy: true
     },
-    trackUserLocation: true,
-    showUserLocation: true
   }));
 
   // Initialize datepicker
@@ -501,7 +499,57 @@
         updateSpotSummary();
       }
     });
+
+    map.on('load', function() {
+        addCityMarkers();
+    });
+
   });
+
+  let cityMarkers = [];
+  let parkingLotMarkers = [];
+
+
+  function clearParkingLotMarkers() {
+  parkingLotMarkers.forEach(marker => marker.remove());
+  parkingLotMarkers = [];
+}
+
+// Function to clear all city markers
+function clearCityMarkers() {
+  cityMarkers.forEach(marker => marker.remove());
+  cityMarkers = [];
+}
+
+  function addCityMarkers() {
+  clearCityMarkers();
+
+  const cityOptions = document.getElementById('city-select').options;
+
+  for (let i = 0; i < cityOptions.length; i++) {
+    const cityName = cityOptions[i].text;
+    if (!cityName || cityName === "Select a city") continue;
+
+    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.features && data.features.length > 0) {
+          const marker = new mapboxgl.Marker({ color: '#d11a2a' })
+            .setLngLat(data.features[0].center)
+            .setPopup(new mapboxgl.Popup().setHTML(`<h6>${cityName}</h6>`))
+            .addTo(map);
+          cityMarkers.push(marker);
+        }
+      });
+  }
+}
+
+
+
+
+
+
+
 
   // Update step indicator based on form progress
   function updateStepIndicator() {
@@ -573,6 +621,10 @@
 
   // City selection handler
   function cityChanged(selectElement) {
+
+    clearParkingLotMarkers();
+    clearCityMarkers();
+
     const cityId = selectElement.value;
     const cityName = selectElement.options[selectElement.selectedIndex].text;
 
@@ -584,6 +636,11 @@
     document.getElementById("spot-rects-group").innerHTML = "";
     document.getElementById("selected-spot-id").value = "";
     document.getElementById("submit-button").disabled = true;
+
+    cityMarkers.forEach(marker => marker.remove());
+    cityMarkers = [];
+    parkingLotMarkers.forEach(marker => marker.remove());
+
 
     zoomToCity(cityName);
     updateStepIndicator();
@@ -604,8 +661,25 @@
         option.value = lot.id;
         option.textContent = lot.name;
         option.dataset.address = lot.address;
-        option.dataset.name = lot.coordinates;
         parkingLotSelect.appendChild(option);
+
+        if (lot.address) {
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lot.address)}.json?access_token=${mapboxgl.accessToken}`)
+          .then(response => response.json())
+          .then(geoData => {
+            if (geoData.features && geoData.features.length > 0) {
+              const marker = new mapboxgl.Marker({ color: '#4361ee' })
+                .setLngLat(geoData.features[0].center)
+                .setPopup(new mapboxgl.Popup().setHTML(`<h6>${lot.name}</h6><p>${lot.address}</p>`))
+                .addTo(map);
+              parkingLotMarkers.push(marker);
+            }
+          });
+      }
+
+
+
+
       });
 
       parkingLotSelect.disabled = false;
@@ -613,9 +687,11 @@
   }
 
   // Parking lot selection handler
-  function parkingLotSelected() {
+  // Parking lot selection handler
+function parkingLotSelected() {
     const select = document.getElementById("parking-lot-select");
     const selectedOption = select.options[select.selectedIndex];
+    const parkingLotAddress = selectedOption.dataset.address;
 
     document.getElementById("parking-lot-container").style.display = "none";
     document.getElementById("selected-spot-id").value = "";
@@ -624,21 +700,33 @@
     // Update location in summary
     document.getElementById("summary-location").textContent = selectedOption.textContent;
 
-    // Update map to show selected parking lot
-    if (selectedOption.dataset.coords) {
-      const [lng, lat] = selectedOption.dataset.coords.split(',').map(Number);
-      map.flyTo({
-        center: [lng, lat],
-        zoom: 15
-      });
 
 
+
+
+    // Geocode parking lot address and zoom to it
+    if (parkingLotAddress) {
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(parkingLotAddress)}.json?access_token=${mapboxgl.accessToken}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.features && data.features.length > 0) {
+                    map.flyTo({
+                        center: data.features[0].center,
+                        zoom: 17  // Higher zoom level for parking lots
+                    });
+
+
+                }
+            })
+            .catch(error => {
+                console.error("Geocoding error:", error);
+            });
     }
 
     checkTimeValidity();
     updateStepIndicator();
     updateSpotSummary();
-  }
+}
 
   // Fetch spot availability
   function fetchSpotStatus() {
