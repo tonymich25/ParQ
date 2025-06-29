@@ -189,7 +189,63 @@
     color: var(--success-color);
   }
 
+  /* Split form layout */
+  .form-column {
+    padding: 1.5rem;
+  }
+
+  .form-left {
+    border-right: 1px solid #e9ecef;
+  }
+
+  .form-right {
+    padding-left: 2rem;
+  }
+
+  .form-divider {
+    margin: 2rem 0;
+    border-top: 1px dashed #dee2e6;
+  }
+
+  /* Spot type indicators */
+  .spot-type-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 6px;
+  }
+
+  .spot-regular {
+    background-color: #4361ee;
+  }
+
+  .spot-electric {
+    background-color: #4bb543;
+  }
+
+  .spot-disabled {
+    background-color: #6c757d;
+  }
+
+  .spot-premium {
+    background-color: #fca311;
+  }
+
   /* Responsive adjustments */
+  @media (max-width: 992px) {
+    .form-left {
+      border-right: none;
+      border-bottom: 1px solid #e9ecef;
+      padding-bottom: 2rem;
+    }
+
+    .form-right {
+      padding-left: 1.5rem;
+      padding-top: 2rem;
+    }
+  }
+
   @media (max-width: 768px) {
     .booking-hero {
       padding: 1.5rem;
@@ -237,91 +293,168 @@
     <form method="POST" action="{{ url_for('booking.book') }}" id="booking-form">
       {{ form.hidden_tag() }}
 
-      <!-- Location Section -->
-      <div class="mb-5">
-        <h5 class="section-title"><i class="bi bi-geo-alt-fill"></i>Location Details</h5>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <div class="form-floating">
-              <select class="form-select" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
-                <option value="" disabled selected>Select a city</option>
-                {% for val, label in form.city.choices %}
-                  <option value="{{ val }}">{{ label }}</option>
-                {% endfor %}
-              </select>
-              <label for="city-select">{{ form.city.label }} <span class="text-danger">*</span></label>
+      <div class="row">
+        <!-- Left Column - Location & Time -->
+        <div class="col-lg-6 form-column form-left">
+          <!-- Location Section -->
+          <div class="mb-4">
+            <h5 class="section-title"><i class="bi bi-geo-alt-fill"></i>Location Details</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="form-floating">
+                  <select class="form-select" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
+                    <option value="" disabled selected>Select a city</option>
+                    {% for val, label in form.city.choices %}
+                      <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <label for="city-select">{{ form.city.label }} <span class="text-danger">*</span></label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-floating">
+                  <select class="form-select" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected()">
+                    <option value="" disabled selected>Please select a city first</option>
+                  </select>
+                  <label for="parking-lot-select">{{ form.parkingLot.label }} <span class="text-danger">*</span></label>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="col-md-6">
-            <div class="form-floating">
-              <select class="form-select" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected()">
-                <option value="" disabled selected>Please select a city first</option>
-              </select>
-              <label for="parking-lot-select">{{ form.parkingLot.label }} <span class="text-danger">*</span></label>
-            </div>
+
+          <!-- Interactive Map -->
+          <div class="mb-4">
+            <h5 class="section-title"><i class="bi bi-map"></i>Parking Location Map</h5>
+            <div id="map" class="rounded-3"></div>
+            <div class="text-muted mt-2"><small>Select a city to view available parking locations</small></div>
           </div>
+
+          <!-- Date & Time Section -->
+          <!-- Date & Time Section -->
+<div class="mb-4">
+  <h5 class="section-title"><i class="bi bi-calendar-event"></i>Date & Time</h5>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control" id="bookingDate" name="bookingDate" placeholder="Select date" required readonly>
+        <label for="bookingDate">Booking Date <span class="text-danger">*</span></label>
+      </div>
+    </div>
+  </div>
+  <div class="row mt-3">
+    <div class="col-md-6">
+      <div class="form-group">
+        <label for="start-time">Start Time <span class="text-danger">*</span></label>
+        <input type="hidden" id="start-time" name="startTime">
+        <div class="input-group">
+          <select class="form-control hour-select" name="startHour" required onchange="checkTimeValidity()">
+            {% for i in range(7, 24) %}
+              <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-control minute-select" name="startMinute" required onchange="checkTimeValidity()">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+          </select>
         </div>
       </div>
-
-      <!-- Interactive Map -->
-      <div class="mb-5">
-        <h5 class="section-title"><i class="bi bi-map"></i>Parking Location Map</h5>
-        <div id="map" class="rounded-3"></div>
-        <div class="text-muted mt-2"><small>Select a city to view available parking locations</small></div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-group">
+        <label for="end-time">End Time <span class="text-danger">*</span></label>
+        <input type="hidden" id="end-time" name="endTime">
+        <div class="input-group">
+          <select class="form-control hour-select" name="endHour" required onchange="checkTimeValidity()">
+            {% for i in range(7, 24) %}
+              <option value="{{ i }}">{{ i }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-control minute-select" name="endMinute" required onchange="checkTimeValidity()">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+          </select>
+        </div>
       </div>
+    </div>
+  </div>
+  <div id="time-error" class="text-danger mt-2"></div>
+</div>
 
-      <!-- Date & Time Section -->
-      <div class="mb-5">
-        <h5 class="section-title"><i class="bi bi-calendar-event"></i>Date & Time</h5>
-        <div class="row g-3">
-          <div class="col-md-6">
-            <div class="form-floating">
-              <input type="text" class="form-control" id="bookingDate" name="bookingDate" placeholder="Select date" required readonly>
-              <label for="bookingDate">Booking Date <span class="text-danger">*</span></label>
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="form-floating">
-              <select class="form-select hour-select" name="startHour" required onchange="checkTimeValidity()">
-                {% for i in range(7, 24) %}
-                  <option value="{{ i }}" {% if i==9 %}selected{% endif %}>{{ "%02d"|format(i) }}:00</option>
-                {% endfor %}
-              </select>
-              <label for="start-time">Start Time <span class="text-danger">*</span></label>
-              <input type="hidden" id="start-time" name="startTime">
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="form-floating">
-              <select class="form-select hour-select" name="endHour" required onchange="checkTimeValidity()">
-                {% for i in range(7, 24) %}
-                  <option value="{{ i }}" {% if i==17 %}selected{% endif %}>{{ "%02d"|format(i) }}:00</option>
-                {% endfor %}
-              </select>
-              <label for="end-time">End Time <span class="text-danger">*</span></label>
-              <input type="hidden" id="end-time" name="endTime">
+          <!-- Spot Type Legend -->
+          <div class="mt-4">
+            <h6 class="text-muted mb-3">Spot Type Legend</h6>
+            <div class="d-flex flex-wrap gap-3">
+              <div class="d-flex align-items-center">
+                <span class="spot-type-indicator spot-regular"></span>
+                <small>Regular</small>
+              </div>
+              <div class="d-flex align-items-center">
+                <span class="spot-type-indicator spot-electric"></span>
+                <small>Electric</small>
+              </div>
+              <div class="d-flex align-items-center">
+                <span class="spot-type-indicator spot-disabled"></span>
+                <small>Disabled</small>
+              </div>
+              <div class="d-flex align-items-center">
+                <span class="spot-type-indicator spot-premium"></span>
+                <small>Premium</small>
+              </div>
             </div>
           </div>
         </div>
-        <div id="time-error" class="text-danger mt-2"></div>
-      </div>
 
-      <!-- Parking Spot Visualization -->
-      <div id="parking-lot-container" class="mb-4" style="display: none;">
-        <h5 class="section-title"><i class="bi bi-p-square-fill"></i>Available Spots</h5>
-        <div class="alert alert-info" id="parking-lot-status">
-          <i class="bi bi-info-circle-fill me-2"></i>Please select location, date and time to see available spots
+        <!-- Right Column - Spot Selection -->
+        <div class="col-lg-6 form-column form-right">
+          <!-- Parking Spot Visualization -->
+          <div id="parking-lot-container" style="display: none;">
+            <h5 class="section-title"><i class="bi bi-p-square-fill"></i>Available Spots</h5>
+            <div class="alert alert-info" id="parking-lot-status">
+              <i class="bi bi-info-circle-fill me-2"></i>Please select location, date and time to see available spots
+            </div>
+            <div class="parking-lot-visualization">
+              <svg id="parking-svg" viewBox="0 0 720 720" xmlns="http://www.w3.org/2000/svg" class="w-100">
+                <image id="parking-image" href="" x="0" y="0" width="100%" height="100%"></image>
+                <g id="spot-rects-group"></g>
+              </svg>
+            </div>
+            <input type="hidden" name="spotId" id="selected-spot-id">
+          </div>
+
+          <!-- Selected Spot Summary -->
+          <div id="spot-summary" class="mt-4 p-3 bg-light rounded" style="display: none;">
+            <h6 class="mb-3">Your Selection</h6>
+            <div class="d-flex justify-content-between mb-2">
+              <small class="text-muted">Location:</small>
+              <small id="summary-location">-</small>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+              <small class="text-muted">Date:</small>
+              <small id="summary-date">-</small>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+              <small class="text-muted">Time:</small>
+              <small id="summary-time">-</small>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+              <small class="text-muted">Spot:</small>
+              <small id="summary-spot">-</small>
+            </div>
+            <hr class="my-2">
+            <div class="d-flex justify-content-between">
+              <small class="text-muted">Total:</small>
+              <small class="fw-bold" id="summary-price">€0.00</small>
+            </div>
+          </div>
         </div>
-        <div class="parking-lot-visualization">
-          <svg id="parking-svg" viewBox="0 0 720 720" xmlns="http://www.w3.org/2000/svg" class="w-100">
-            <image id="parking-image" href="" x="0" y="0" width="100%" height="100%"></image>
-            <g id="spot-rects-group"></g>
-          </svg>
-        </div>
-        <input type="hidden" name="spotId" id="selected-spot-id">
       </div>
 
       <!-- Submit Button -->
+      <div class="form-divider"></div>
       <div class="d-grid mt-4">
         <button type="submit" class="btn btn-primary btn-lg py-3" disabled id="submit-button">
           <i class="bi bi-check-circle-fill me-2"></i>Confirm Booking
@@ -334,6 +467,7 @@
 <!-- External Resources -->
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://js.stripe.com/v3/"></script>
 
 <script>
   // Initialize map
@@ -360,9 +494,11 @@
     flatpickr("#bookingDate", {
       minDate: "today",
       dateFormat: "Y-m-d",
-      onChange: function() {
+      onChange: function(selectedDates, dateStr, instance) {
+        document.getElementById("summary-date").textContent = dateStr;
         checkTimeValidity();
         updateStepIndicator();
+        updateSpotSummary();
       }
     });
   });
@@ -398,7 +534,9 @@
   // Check time validity
   function checkTimeValidity() {
     const bookingDate = document.getElementById("bookingDate").value;
+    const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
     const startHour = parseInt(document.querySelector('[name="startHour"]').value);
+    const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
     const endHour = parseInt(document.querySelector('[name="endHour"]').value);
     const errorDiv = document.getElementById("time-error");
 
@@ -409,9 +547,14 @@
       isValid = false;
       errorMessage = "Please select a booking date.";
     }
-    else if (endHour <= startHour) {
+    else if (endHour < startHour) {
       isValid = false;
       errorMessage = "End time must be after start time.";
+    }
+    else if  (endHour === startHour && endMinute <= startMinute){
+      isValid = false;
+      errorMessage = "End time must be after start time.";
+
     }
 
     errorDiv.textContent = errorMessage;
@@ -422,7 +565,10 @@
       fetchSpotStatus();
     }
 
+    // Update time in summary
+    document.getElementById("summary-time").textContent = `${startHour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')} - ${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
     updateStepIndicator();
+    updateSpotSummary();
   }
 
   // City selection handler
@@ -441,6 +587,7 @@
 
     zoomToCity(cityName);
     updateStepIndicator();
+    updateSpotSummary();
 
     // Fetch parking lots for the selected city
     fetch("/city_selected", {
@@ -457,7 +604,7 @@
         option.value = lot.id;
         option.textContent = lot.name;
         option.dataset.address = lot.address;
-        option.dataset.coords = lot.coordinates;
+        option.dataset.name = lot.coordinates;
         parkingLotSelect.appendChild(option);
       });
 
@@ -474,6 +621,9 @@
     document.getElementById("selected-spot-id").value = "";
     document.getElementById("submit-button").disabled = true;
 
+    // Update location in summary
+    document.getElementById("summary-location").textContent = selectedOption.textContent;
+
     // Update map to show selected parking lot
     if (selectedOption.dataset.coords) {
       const [lng, lat] = selectedOption.dataset.coords.split(',').map(Number);
@@ -482,18 +632,12 @@
         zoom: 15
       });
 
-      // Add marker
-      new mapboxgl.Marker({ color: '#4361ee' })
-        .setLngLat([lng, lat])
-        .setPopup(new mapboxgl.Popup().setHTML(`
-          <h6>${selectedOption.textContent}</h6>
-          <p class="mb-1">${selectedOption.dataset.address}</p>
-        `))
-        .addTo(map);
+
     }
 
     checkTimeValidity();
     updateStepIndicator();
+    updateSpotSummary();
   }
 
   // Fetch spot availability
@@ -501,13 +645,19 @@
     const parkingLotId = document.getElementById("parking-lot-select").value;
     const bookingDate = document.getElementById("bookingDate").value;
     const startHour = document.querySelector("[name=\"startHour\"]").value.padStart(2, "0");
+    const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
     const endHour = document.querySelector("[name=\"endHour\"]").value.padStart(2, "0");
+    const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
+    const startTime = `${startHour}:${startMinute}`;
+    const endTime = `${endHour}:${endMinute}`;
+
 
     document.getElementById("parking-lot-container").style.display = "block";
     document.getElementById("parking-lot-status").className = "alert alert-info";
     document.getElementById("parking-lot-status").innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Checking availability...';
     document.getElementById("selected-spot-id").value = "";
     document.getElementById("submit-button").disabled = true;
+    document.getElementById("spot-summary").style.display = "none";
 
     fetch("/check_spot_availability", {
       method: "POST",
@@ -515,14 +665,15 @@
       body: JSON.stringify({
         parkingLotId: parkingLotId,
         bookingDate: bookingDate,
-        startTime: `${startHour}:00`,
-        endTime: `${endHour}:00`
+        startTime: startTime,
+        endTime: endTime,
       })
     })
     .then(response => response.json())
     .then(data => {
       renderParkingSpots(data);
       updateStepIndicator();
+      updateSpotSummary();
     })
     .catch(error => {
       console.error("Error fetching spot status:", error);
@@ -568,12 +719,17 @@
             document.getElementById("selected-spot-id").value = spot.id;
             document.getElementById(`spot-${spot.id}`).classList.add("selected");
             document.getElementById("submit-button").disabled = false;
+            document.getElementById("spot-summary").style.display = "block";
+            document.getElementById("summary-spot").textContent = `Spot #${spot.id} (${spot.type})`;
+            document.getElementById("summary-price").textContent = `€${spot.price.toFixed(2)}`;
           } else {
             document.getElementById("selected-spot-id").value = "";
             document.getElementById("submit-button").disabled = true;
+            document.getElementById("spot-summary").style.display = "none";
           }
 
           updateStepIndicator();
+          updateSpotSummary();
         });
       }
       spotRectsGroup.appendChild(rect);
@@ -586,6 +742,16 @@
     } else {
       statusElement.className = "alert alert-warning";
       statusElement.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>No spots available for selected time`;
+    }
+  }
+
+  // Update spot summary
+  function updateSpotSummary() {
+    const spotId = document.getElementById("selected-spot-id").value;
+    if (spotId) {
+      document.getElementById("spot-summary").style.display = "block";
+    } else {
+      document.getElementById("spot-summary").style.display = "none";
     }
   }
 
@@ -607,12 +773,13 @@
 
   // Form submission handler
   document.getElementById("booking-form").addEventListener("submit", function(e) {
-    const bookingDate = document.getElementById("bookingDate").value;
-    const startHour = document.querySelector("[name=\"startHour\"]").value.padStart(2, '0');
-    const endHour = document.querySelector("[name=\"endHour\"]").value.padStart(2, '0');
+    const startHour = document.querySelector('[name="startHour"]').value.padStart(2, '0');
+    const startMinute = document.querySelector('[name="startMinute"]').value.padStart(2, '0');
+    const endHour = document.querySelector('[name="endHour"]').value.padStart(2, '0');
+    const endMinute = document.querySelector('[name="endMinute"]').value.padStart(2, '0');
 
-    document.getElementById("start-time").value = `${startHour}:00`;
-    document.getElementById("end-time").value = `${endHour}:00`;
+    document.getElementById("start-time").value = `${startHour}:${startMinute}`;
+    document.getElementById("end-time").value = `${endHour}:${endMinute}`;
   });
 </script>
 {% endblock %}
