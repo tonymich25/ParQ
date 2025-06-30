@@ -107,6 +107,7 @@ class Booking(db.Model, UserMixin):
     __tablename__ = 'bookings'
     id = db.Column(db.Integer, primary_key=True)
     userid = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    parking_lot_id = db.Column(db.Integer, db.ForeignKey('parking_lots.id'), nullable=False)
     spot_id = db.Column(db.Integer, db.ForeignKey('parking_spots.id'), nullable=False)
     timeBooked = db.Column(db.DateTime, default=datetime.now, nullable=False)
     bookingDate = db.Column(db.Date, nullable=False)
@@ -114,9 +115,12 @@ class Booking(db.Model, UserMixin):
     endTime = db.Column(db.Time, nullable=False)
     amount = db.Column(db.Float, nullable=False)
     parking_spot = db.relationship('ParkingSpot', back_populates='bookings')
+    parking_lot = db.relationship('ParkingLot')  # New relationship
 
-    def __init__(self, userid, spot_id, bookingDate, startTime, endTime, amount):
+
+    def __init__(self, userid, parking_lot_id, spot_id, bookingDate, startTime, endTime, amount):
         self.userid = userid
+        self.parking_lot_id = parking_lot_id
         self.spot_id = spot_id
         self.bookingDate = bookingDate
         self.startTime = startTime

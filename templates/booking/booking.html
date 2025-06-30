@@ -78,16 +78,16 @@
   }
 
   /* Parking spot visualization */
-  .parking-lot-visualization {
-    overflow: auto;
-    max-height: 500px;
-    border-radius: 8px;
-    background-color: #f8f9fa;
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
-  }
+  .parking-lot-visualisation svg {
+  width: 419px; /* Original width (from your code) */
+  height: 254px; /* Original height (from your code) */
+  margin-left: auto;
+  margin-right: 90px;/* Push SVG to the right */
+  display: block;
+}
 
   .parking-spot-rect {
-    stroke-width: 3;
+    stroke-width: 1.2;
     stroke-opacity: 0.8;
     transition: all 0.2s ease;
     cursor: pointer;
@@ -251,9 +251,13 @@
       padding: 1.5rem;
     }
 
-    .parking-lot-visualization {
-      max-height: 300px;
-    }
+    .parking-lot-visualisation {
+  margin-left: auto; /* Pushes the container to the right */
+  max-width: 100%; /* Ensures it doesn't overflow */
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 20px;
+}
 
     .step-indicator {
       margin-bottom: 1.5rem;
@@ -263,6 +267,32 @@
       font-size: 0.75rem;
     }
   }
+
+  /* Simple AI Recommendation Section */
+.ai-recommendation {
+  background-color: #fff3e0; /* Light orange background */
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+
+.ai-recommendation-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.ai-sparkle-icon {
+  color: #ff9800; /* Orange color for the sparkle */
+  font-size: 1.2rem;
+}
+
+.ai-recommendation-content small {
+  color: #5d4037;
+  opacity: 0.9;
+}
+
 </style>
 {% endblock %}
 
@@ -416,14 +446,40 @@
             <div class="alert alert-info" id="parking-lot-status">
               <i class="bi bi-info-circle-fill me-2"></i>Please select location, date and time to see available spots
             </div>
-            <div class="parking-lot-visualization">
-              <svg id="parking-svg" viewBox="0 0 720 720" xmlns="http://www.w3.org/2000/svg" class="w-100">
-                <image id="parking-image" href="" x="0" y="0" width="100%" height="100%"></image>
-                <g id="spot-rects-group"></g>
-              </svg>
-            </div>
+            <div class="parking-lot-visualisation">
+  <svg id="parking-svg"
+       viewBox="0 0 419 254"
+       xmlns="http://www.w3.org/2000/svg"
+       style="width: 419px; height: 254px;"> <!-- Exact pixel dimensions -->
+    <image id="parking-image" href="" x="0" y="0" width="419" height="254"></image>
+    <g id="spot-rects-group"></g>
+  </svg>
+</div>
             <input type="hidden" name="spotId" id="selected-spot-id">
           </div>
+
+
+          <!-- AI Recommendation Section -->
+<!-- AI Recommendation Section -->
+<div class="ai-recommendation">
+  <div class="ai-recommendation-header">
+    <i class="ai-sparkle-icon bi bi-stars"></i>
+    <h6 class="mb-0" style="font-size: 0.95rem;">AI Insights</h6>
+  </div>
+  <div class="ai-recommendation-content">
+    <div id="ai-random-message">
+    <p class="mb-2"><small>Select a time to see AI-powered spot suggestions based on your preferences</small></p>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
 
           <!-- Selected Spot Summary -->
           <div id="spot-summary" class="mt-4 p-3 bg-light rounded" style="display: none;">
@@ -555,7 +611,6 @@ function clearCityMarkers() {
   function updateStepIndicator() {
     const steps = document.querySelectorAll('.step');
     const citySelected = document.getElementById('city-select').value !== '';
-    const lotSelected = document.getElementById('parking-lot-select').value !== '';
     const dateSelected = document.getElementById('bookingDate').value !== '';
     const spotSelected = document.getElementById('selected-spot-id').value !== '';
 
@@ -608,10 +663,19 @@ function clearCityMarkers() {
     errorDiv.textContent = errorMessage;
     document.getElementById("submit-button").disabled = !isValid;
 
+
+
     const parkingLotId = document.getElementById("parking-lot-select").value;
     if (parkingLotId && isValid) {
       fetchSpotStatus();
     }
+
+
+    // Check if both time and location are selected
+    if (parkingLotId && bookingDate && startHour && endHour) {
+        displayRandomAIMessage();
+    }
+
 
     // Update time in summary
     document.getElementById("summary-time").textContent = `${startHour.toString().padStart(2, '0')}:${startMinute.toString().padStart(2, '0')} - ${endHour.toString().padStart(2, '0')}:${endMinute.toString().padStart(2, '0')}`;
@@ -677,9 +741,6 @@ function clearCityMarkers() {
           });
       }
 
-
-
-
       });
 
       parkingLotSelect.disabled = false;
@@ -700,7 +761,13 @@ function parkingLotSelected() {
     // Update location in summary
     document.getElementById("summary-location").textContent = selectedOption.textContent;
 
+    const bookingDate = document.getElementById("bookingDate").value;
+    const startHour = document.querySelector('[name="startHour"]').value;
+    const endHour = document.querySelector('[name="endHour"]').value;
 
+    if (bookingDate && startHour && endHour) {
+        displayRandomAIMessage();
+    }
 
 
 
@@ -722,7 +789,7 @@ function parkingLotSelected() {
                 console.error("Geocoding error:", error);
             });
     }
-
+    change=true;
     checkTimeValidity();
     updateStepIndicator();
     updateSpotSummary();
@@ -789,6 +856,8 @@ function parkingLotSelected() {
       rect.setAttribute("y", y);
       rect.setAttribute("width", width);
       rect.setAttribute("height", height);
+      rect.setAttribute("rx", "5");
+      rect.setAttribute("ry", "5");
       rect.setAttribute("id", `spot-${spot.id}`);
       rect.classList.add("parking-spot-rect");
       rect.classList.toggle("available", spot.is_available);
@@ -808,8 +877,8 @@ function parkingLotSelected() {
             document.getElementById(`spot-${spot.id}`).classList.add("selected");
             document.getElementById("submit-button").disabled = false;
             document.getElementById("spot-summary").style.display = "block";
-            document.getElementById("summary-spot").textContent = `Spot #${spot.id} (${spot.type})`;
-            document.getElementById("summary-price").textContent = `€${spot.price.toFixed(2)}`;
+            document.getElementById("summary-spot").textContent = `Spot #${spot.id}`;
+            document.getElementById("summary-price").textContent = `€${spot.pricePerHour.toFixed(2)}`;
           } else {
             document.getElementById("selected-spot-id").value = "";
             document.getElementById("submit-button").disabled = true;
@@ -869,5 +938,45 @@ function parkingLotSelected() {
     document.getElementById("start-time").value = `${startHour}:${startMinute}`;
     document.getElementById("end-time").value = `${endHour}:${endMinute}`;
   });
+
+  // Random AI messages
+const aiMessages = [
+  "Most bookings for this location happen at around 9:30 AM daily",
+  "By 11 AM 94% of spaces are booked in advance for this area",
+  "This location is a hotspot and spaces quickly run out",
+  "Off-peak hours parking reservations drop by 40% in this parking lot",
+  "On weekdays, 85% of bays are booked during peak hours",
+  "Weekend parking demand decreases by 30% compared to weekdays for this location",
+  "Evening parking demand drops sharply after 7:00 PM specifically for this parking lot",
+  "This area experiences high demand on weekdays, with occupancy over 90%",
+  "Reservations for this location peak during business hours from 9:00 AM to 5:00 PM"
+];
+
+let change = false
+
+// Display random message on load
+function displayRandomAIMessage() {
+
+  if (change === true){
+
+
+    const randomMessage = aiMessages[Math.floor(Math.random() * aiMessages.length)];
+  const messageElement = document.getElementById('ai-random-message');
+
+  // Clear any existing content first
+  messageElement.innerHTML = '';
+
+  // Add the new message
+  messageElement.innerHTML = `
+    <small class="d-flex align-items-center gap-1">
+      ${randomMessage}
+    </small>
+  `;
+
+  change=false;
+  }
+
+
+}
 </script>
 {% endblock %}

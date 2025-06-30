@@ -128,7 +128,8 @@ def check_spot_availability():
             'id': spot.id,
             'spotNumber': spot.spotNumber,
             'svgCoords': spot.svgCoords,
-            'is_available': spot.id not in bookedSpotIds
+            'is_available': spot.id not in bookedSpotIds,
+            'pricePerHour': spot.pricePerHour
         })
 
     return jsonify({
@@ -153,9 +154,13 @@ def payment_success():
             flash("Payment not completed. Please try again.", "error")
             return redirect(url_for('booking.book'))
 
+        spot = ParkingSpot.query.get(session.metadata.get('spot_id'))
+
+
         # Create the booking record
         new_booking = Booking(
             userid=session.metadata.get('user_id'),
+            parking_lot_id=spot.parkingLotId,
             spot_id=session.metadata.get('spot_id'),
             bookingDate=datetime.datetime.strptime(session.metadata.get('booking_date'), '%Y-%m-%d').date(),
             startTime=datetime.datetime.strptime(session.metadata.get('start_time'), '%H:%M').time(),
@@ -171,7 +176,7 @@ def payment_success():
         encrypted = cipher.encrypt(str(new_booking.id).encode()).decode()
 
         img = qrcode.make(encrypted)
-        img.save(f"qrcodes/{new_booking.id}.png")
+        img.save(f"static/qr_codes/{new_booking.id}.png")
 
 
         flash("Your booking and payment were successful!", "success")
