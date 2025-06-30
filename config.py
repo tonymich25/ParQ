@@ -21,6 +21,9 @@ app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
 # Initialising Login Manager
 login_manager = LoginManager()
 login_manager.init_app(app)
+login_manager.login_view = 'accounts.login'
+login_manager.login_message = "Please log in to access this page."
+login_manager.login_message_category = "warning"
 
 
 STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
