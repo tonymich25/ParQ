@@ -139,10 +139,61 @@
                 padding: 2rem 1rem;
             }
         }
+
+        .blob-bg {
+            position: relative;
+            background: #f8f9fa;
+            overflow: hidden;
+        }
+        .blob {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(45deg, #a18cd1, #fbc2eb);
+            border-radius: 50%;
+            filter: blur(50px);
+            opacity: 0.3;
+            animation: rotateBlob 20s infinite alternate;
+            z-index: 0;
+        }
+        .blob:nth-child(2) {
+            background: linear-gradient(45deg, #ff9a9e, #fad0c4);
+            width: 400px;
+            height: 400px;
+            animation-delay: -5s;
+            bottom: 0;
+            right: 0;
+        }
+        .blob:nth-child(3) {
+            background: linear-gradient(45deg, #a1c4fd, #c2e9fb);
+            width: 300px;
+            height: 300px;
+            animation-delay: -10s;
+            top: 50%;
+            right: 20%;
+        }
+        .card {
+            position: relative;
+            z-index: 1;
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        @keyframes rotateBlob {
+            0% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+            100% {
+                transform: translate(100px, 100px) rotate(360deg);
+            }
+        }
     </style>
 </head>
 <body>
-    <!-- Navbar -->
+    <div class="blob"></div>
+    <div class="blob"></div>
+    <div class="blob"></div>
+
     <nav class="navbar navbar-expand-lg py-3">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="#">
@@ -163,9 +214,7 @@
         </div>
     </nav>
 
-    <!-- Main Content -->
     <main class="container my-4">
-        <!-- Hero Section -->
         <section class="hero-section">
             <div class="row align-items-center">
                 <div class="col-lg-6 mb-4 order-lg-1 order-2">
@@ -196,7 +245,6 @@
             </div>
         </section>
 
-        <!-- Features Section -->
         <section id="features" class="my-5 py-4">
             <div class="text-center mb-5">
                 <h2 class="mb-3">The Smart Way to Park</h2>
@@ -260,7 +308,6 @@
             </div>
         </section>
 
-        <!-- How It Works Section -->
         <section id="how-it-works" class="my-5 py-4">
             <div class="text-center mb-5">
                 <h2 class="mb-3">How ParQ Works</h2>
@@ -297,10 +344,9 @@
             </div>
         </section>
 
-        <!-- CTA Section -->
         <section class="cta-section text-center">
-            <h2 class="mb-4">Ready to Park Smarter?</h2>
-            <p class="lead mb-4">Join thousands of happy drivers enjoying stress-free parking today.</p>
+            <h2 class="mb-4">Ready to Park Stress-Free?</h2>
+            <p class="lead mb-4">Join the future today by booking your first parking spot.</p>
             <div class="d-flex justify-content-center flex-wrap">
                 <a href="/register" class="btn btn-light btn-lg me-3 mb-3">
                     <i class="bi bi-person-plus me-2"></i>Sign Up Free
@@ -313,7 +359,5 @@
 
     </main>
 
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

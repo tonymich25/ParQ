@@ -3,8 +3,8 @@
 {% block title %}ParQ - Create an Account{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-center align-items-center min-vh-100 bg-light">
-    <div class="card shadow-sm p-4" style="max-width: 480px; width: 100%;">
+<div class="d-flex justify-content-center align-items-center py-5 bg-light">
+    <div class="card shadow-sm p-4" style="max-width: 480px; width: 100%; margin: 3rem 0">
         <h2 class="mb-4 text-center">Create an Account</h2>
 
         <form action="{{ url_for('accounts.registration') }}" method="POST" novalidate>

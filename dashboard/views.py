@@ -1,6 +1,4 @@
-import os
 from datetime import date
-
 from flask import render_template, Blueprint, send_from_directory, current_app
 from flask_login import login_required, current_user
 

@@ -1,6 +1,5 @@
 import datetime
 from cryptography.fernet import Fernet
-import qrcode
 import os
 import stripe
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
@@ -9,9 +8,8 @@ from booking.forms import BookingForm
 from config import City, db, ParkingLot, Booking, ParkingSpot
 import qrcode
 
-import base64
 
-booking_bp = Blueprint('booking', __name__, template_folder='templates')
+booking_bp = Blueprint('booking_bp', __name__, template_folder='templates')
 
 
 @booking_bp.route('/booking', methods=['GET', 'POST'])
@@ -24,15 +22,12 @@ def book():
 
     if form.validate_on_submit():
 
-
         spotId = request.form.get('spotId')
         startTimeFormatted = datetime.datetime.strptime(form.startTime.data, "%H:%M").time()
         endTimeFormatted = datetime.datetime.strptime(form.endTime.data, "%H:%M").time()
         spot = ParkingSpot.query.get(spotId)
 
 
-
-        # Final check for availability before committing
         conflicting_bookings = Booking.query.filter(
         Booking.spot_id == spotId,
         Booking.bookingDate == form.bookingDate.data,
@@ -51,17 +46,17 @@ def book():
                 payment_method_types=['card'],
                 line_items=[{
                     'price_data': {
-                        'currency': 'eur',  # or your currency
+                        'currency': 'eur',
                         'product_data': {
                             'name': f'Parking Spot #{spot.spotNumber}',
                         },
-                        'unit_amount': int(price * 100),  # Stripe uses cents
+                        'unit_amount': int(price * 100),
                     },
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url=url_for('booking.payment_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
-                cancel_url=url_for('booking.book', _external=True),
+                success_url=url_for('booking_bp.payment_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url=url_for('booking_bp.book', _external=True),
                 metadata={
                     'user_id': current_user.get_id(),
                     'spot_id': spotId,
@@ -71,7 +66,6 @@ def book():
                 }
             )
 
-            # Store the session ID temporarily (you might want to store it in the database)
             return redirect(checkout_session.url, code=303)
 
         except Exception as e:
@@ -80,8 +74,6 @@ def book():
             return render_template('booking/booking.html', form=form)
 
 
-
-    # This part runs for GET requests or if form validation fails
     return render_template('booking/booking.html', form=form)
 
 
@@ -144,20 +136,18 @@ def payment_success():
 
     if not session_id:
         flash("Invalid payment session. Please try again.", "error")
-        return redirect(url_for('booking.book'))
+        return redirect(url_for('booking_bp.book'))
 
     try:
-        # Retrieve the session to verify payment
         session = stripe.checkout.Session.retrieve(session_id)
 
         if session.payment_status != 'paid':
             flash("Payment not completed. Please try again.", "error")
-            return redirect(url_for('booking.book'))
+            return redirect(url_for('booking_bp.book'))
 
         spot = ParkingSpot.query.get(session.metadata.get('spot_id'))
 
 
-        # Create the booking record
         new_booking = Booking(
             userid=session.metadata.get('user_id'),
             parking_lot_id=spot.parkingLotId,
@@ -185,8 +175,8 @@ def payment_success():
     except stripe.error.StripeError as e:
         current_app.logger.error(f"Stripe error: {str(e)}")
         flash("Payment processing error. Please contact support.", "error")
-        return redirect(url_for('booking.book'))
+        return redirect(url_for('booking_bp.book'))
     except Exception as e:
         current_app.logger.error(f"Unexpected error: {str(e)}")
         flash("Error processing your booking. Please contact support.", "error")
-        return redirect(url_for('booking.book'))
+        return redirect(url_for('booking_bp.book'))

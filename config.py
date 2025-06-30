@@ -2,9 +2,12 @@ from datetime import datetime
 import os
 import stripe
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, url_for
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
+from flask_admin.menu import MenuLink
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import UserMixin, LoginManager
+from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
 
@@ -155,6 +158,39 @@ class ParkingSpot(db.Model, UserMixin):
     svgCoords = db.Column(db.String(100), nullable=False)
     pricePerHour = db.Column(db.Float, nullable=False)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
+
+
+
+class MainIndexLink(MenuLink):
+    def get_url(self):
+        return url_for('index')
+
+
+class ExtendedModelView(ModelView):
+    def is_accessible(self):
+        return current_user.is_authenticated and current_user.role == 'db_admin'
+
+
+class BookingView(ExtendedModelView):
+    column_display_pk = True
+    column_hide_backrefs = False
+    column_list = ('id', 'userid', 'parking_lot_id', 'spot_id', 'timeBooked', 'bookingDate', 'startTime', 'endTime', 'amount', 'spot_id')
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+
+
+class UserView(ExtendedModelView):
+    column_display_pk = True
+    column_hide_backrefs = False
+    column_list = ('id', 'email', 'password', 'firstname', 'lastname', 'phone', 'role', 'bookings')
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+
+
+admin = Admin(app, template_mode='bootstrap4')
+admin._menu = admin._menu[1:]
+admin.add_link(MainIndexLink(name='Home Page'))
+admin.add_view(BookingView(Booking  , db.session))
+admin.add_view(UserView(User, db.session))
+
 
 
 from accounts.views import accounts_bp, passwordHasher
