@@ -75,38 +75,7 @@
       -webkit-text-fill-color: transparent;
     }
 
-      .blob-bg {
-            position: relative;
-            background: #f8f9fa;
-            overflow: hidden;
-        }
-        .blob {
-            position: absolute;
-            width: 500px;
-            height: 500px;
-            background: linear-gradient(45deg, #a18cd1, #fbc2eb);
-            border-radius: 50%;
-            filter: blur(50px);
-            opacity: 0.3;
-            animation: rotateBlob 20s infinite alternate;
-            z-index: 0;
-        }
-        .blob:nth-child(2) {
-            background: linear-gradient(45deg, #ff9a9e, #fad0c4);
-            width: 400px;
-            height: 400px;
-            animation-delay: -5s;
-            bottom: 0;
-            right: 0;
-        }
-        .blob:nth-child(3) {
-            background: linear-gradient(45deg, #a1c4fd, #c2e9fb);
-            width: 300px;
-            height: 300px;
-            animation-delay: -10s;
-            top: 50%;
-            right: 20%;
-        }
+
         .card {
             position: relative;
             z-index: 1;
@@ -114,14 +83,7 @@
             border: none;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
-        @keyframes rotateBlob {
-            0% {
-                transform: translate(0, 0) rotate(0deg);
-            }
-            100% {
-                transform: translate(100px, 100px) rotate(360deg);
-            }
-        }
+
   </style>
 
   {% block extra_styles %}{% endblock %}
@@ -129,14 +91,10 @@
 </head>
 
 <body>
-    <div class="blob"></div>
-    <div class="blob"></div>
-    <div class="blob"></div>
 
   <nav class="navbar navbar-expand-lg navbar-light sticky-top">
     <div class="container">
       <a class="navbar-brand d-flex align-items-center" href="{{ url_for('dashboard.dashboard') }}">
-        <i class="bi bi-p-square-fill me-2"></i>
         ParQ
       </a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">

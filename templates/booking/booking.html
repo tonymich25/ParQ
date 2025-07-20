@@ -480,7 +480,7 @@
                         <hr class="my-2">
                         <div class="d-flex justify-content-between">
                             <small class="text-muted">Total:</small>
-                            <small class="fw-bold" id="summary-price">€0.00</small>
+                            <small class="fw-bold" id="summary-price">€12.00</small>
                         </div>
                     </div>
                 </div>
@@ -828,7 +828,7 @@
                         document.getElementById("submit-button").disabled = false;
                         document.getElementById("spot-summary").style.display = "block";
                         document.getElementById("summary-spot").textContent = `Spot #${spot.id}`;
-                        document.getElementById("summary-price").textContent = `€${spot.pricePerHour.toFixed(2)}`;
+                        document.getElementById("summary-price").textContent = `€${spot.pricePerHour.toFixed(2)*8}`;
                     } else {
                         document.getElementById("selected-spot-id").value = "";
                         document.getElementById("submit-button").disabled = true;
