@@ -1,281 +1,920 @@
+{% extends "base2.html" %}
 
-{% extends "base1.html" %}
+{% block extra_styles %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+    .booking-hero {
+        background: linear-gradient(135deg, #4361ee 0%, #4cc9f0 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .booking-hero::before {
+        content: "";
+        position: absolute;
+        top: -50px;
+        right: -50px;
+        width: 200px;
+        height: 200px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+    }
+
+    .booking-hero::after {
+        content: "";
+        position: absolute;
+        bottom: -80px;
+        left: -80px;
+        width: 300px;
+        height: 300px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 50%;
+    }
+
+    .booking-hero h1 {
+        font-weight: 700;
+        position: relative;
+        z-index: 2;
+    }
+
+    .booking-hero p {
+        opacity: 0.9;
+        position: relative;
+        z-index: 2;
+    }
+
+    .form-section {
+        background-color: white;
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .section-title {
+        color: var(--primary-color);
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .section-title i {
+        margin-right: 10px;
+        font-size: 1.2rem;
+    }
+
+    #map {
+        height: 300px;
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .parking-lot-visualisation svg {
+        width: 419px;
+        height: 254px;
+        margin-left: auto;
+        margin-right: 90px;
+        display: block;
+    }
+
+    .parking-spot-rect {
+        stroke-width: 1.2;
+        stroke-opacity: 0.8;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .parking-spot-rect.available {
+        fill: var(--success-color);
+        stroke: #3a9e3a;
+        fill-opacity: 0.5;
+    }
+
+    .parking-spot-rect.available:hover {
+        fill-opacity: 0.7;
+        stroke-width: 4;
+    }
+
+    .parking-spot-rect.taken {
+        fill: var(--danger-color);
+        stroke: #d11a2a;
+        fill-opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .parking-spot-rect.selected {
+        stroke: var(--primary-color);
+        stroke-width: 5;
+        stroke-opacity: 1;
+        fill-opacity: 0.8;
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+        0% {
+            stroke-width: 5;
+        }
+        50% {
+            stroke-width: 7;
+        }
+        100% {
+            stroke-width: 5;
+        }
+    }
+
+    .step-indicator {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+
+    .step-indicator::before {
+        content: "";
+        position: absolute;
+        top: 15px;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background-color: #e9ecef;
+        z-index: 1;
+    }
+
+    .step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+    }
+
+    .step-number {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background-color: #e9ecef;
+        color: #6c757d;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .step.active .step-number {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .step.completed .step-number {
+        background-color: var(--success-color);
+        color: white;
+    }
+
+    .step-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+        font-weight: 500;
+    }
+
+    .step.active .step-label {
+        color: var(--primary-color);
+        font-weight: 600;
+    }
+
+    .step.completed .step-label {
+        color: var(--success-color);
+    }
+
+    .form-column {
+        padding: 1.5rem;
+    }
+
+    .form-left {
+        border-right: 1px solid #e9ecef;
+    }
+
+    .form-right {
+        padding-left: 2rem;
+    }
+
+    .form-divider {
+        margin: 2rem 0;
+        border-top: 1px dashed #dee2e6;
+    }
+
+    .spot-type-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        margin-right: 6px;
+    }
+
+
+    .spot-available {
+        background-color: #4bb543;
+    }
+
+    .spot-taken {
+        background-color: #FF0000;
+    }
+
+
+    @media (max-width: 992px) {
+        .form-left {
+            border-right: none;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 2rem;
+        }
+
+        .form-right {
+            padding-left: 1.5rem;
+            padding-top: 2rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .booking-hero {
+            padding: 1.5rem;
+        }
+
+        .parking-lot-visualisation {
+            margin-left: auto;
+            max-width: 100%;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .step-indicator {
+            margin-bottom: 1.5rem;
+        }
+
+        .step-label {
+            font-size: 0.75rem;
+        }
+    }
+
+    .ai-recommendation {
+        background-color: #fff3e0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    .ai-recommendation-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 0.5rem;
+    }
+
+    .ai-sparkle-icon {
+        color: #ff9800;
+        font-size: 1.2rem;
+    }
+
+    .ai-recommendation-content small {
+        color: #5d4037;
+        opacity: 0.9;
+    }
+
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1>Book your spot</h1>
-    <div class="p-2 row">
-        <div class="col-2"></div>
-        <div class="col-8">
-            <form method="POST" action="{{ url_for("booking.book") }}">
-                <div class="p-2 bg-light border border-primary text-left">
-                    {{ form.hidden_tag() }}
-                    <div class="form-group">
-                        {{ form.city.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.city.name }}" id="city-select" onchange="cityChanged(this)" required>
-                            <option value="" disabled selected hidden>Select a city</option>
-                            {% for val, label in form.city.choices %}
-                                <option value="{{ val }}">{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        {{ form.parkingLot.label }}<span class="text-danger">*</span>
-                        <select class="form-control" name="{{ form.parkingLot.name }}" id="parking-lot-select" disabled required onchange="parkingLotSelected(this)">
-                            <option value="" disabled selected hidden>Please select a city first</option>
-                        </select>
-                    </div>
-
-
-      <!-- Start Time -->
-<div class="form-group">
-    <label for="start-time">Start Time*</label>
-                <input type="hidden" id="start-time" name="startTime">
-
-    <div class="input-group">
-        <select class="form-control hour-select" name="startHour" required>
-            {% for i in range(7, 24) %}
-                <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-        </select>
-        <select class="form-control minute-select" name="startMinute" required>
-            <option value="00">00</option>
-            <option value="15">15</option>
-            <option value="30">30</option>
-            <option value="45">45</option>
-        </select>
-    </div>
-</div>
-
-<!-- End Time -->
-<div class="form-group">
-    <label for="end-time">End Time*</label>
-<input type="hidden" id="end-time" name="endTime">
-
-    <div class="input-group">
-        <select class="form-control hour-select" name="endHour" required>
-            {% for i in range(7, 24) %}
-                <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-        </select>
-        <select class="form-control minute-select" name="endMinute" required>
-            <option value="00">00</option>
-            <option value="15">15</option>
-            <option value="30">30</option>
-            <option value="45">45</option>
-        </select>
-    </div>
-</div>
-
-
-                </div>
-                <div id="parking-info" class="" style="display:none"></div>
-
-
-
-            <button type="submit" class="btn btn-primary" disabled id="submit-button">Submit</button>
-            </form>
-            <div id="map" style="height: 500px; width: 100%; margin-top: 20px;"></div>
+<div class="container py-4">
+    <div class="step-indicator">
+        <div class="step active">
+            <div class="step-number">1</div>
+            <div class="step-label">Select Location</div>
         </div>
-        <div class="col-2"></div>
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-label">Choose Time</div>
+        </div>
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-label">Pick a Spot</div>
+        </div>
+        <div class="step">
+            <div class="step-number">4</div>
+            <div class="step-label">Confirm</div>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <form method="POST" action="{{ url_for('booking_bp.book') }}" id="booking-form">
+            {{ form.hidden_tag() }}
+
+            <div class="row">
+                <div class="col-lg-6 form-column form-left">
+                    <div class="mb-4">
+                        <h5 class="section-title"><i class="bi bi-geo-alt-fill"></i>Location Details</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" name="{{ form.city.name }}" id="city-select"
+                                            onchange="cityChanged(this)" required>
+                                        <option value="" disabled selected>Select a city</option>
+                                        {% for val, label in form.city.choices %}
+                                        <option value="{{ val }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <label for="city-select">{{ form.city.label }} <span
+                                            class="text-danger">*</span></label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <select class="form-select" name="{{ form.parkingLot.name }}"
+                                            id="parking-lot-select" disabled required onchange="parkingLotSelected()">
+                                        <option value="" disabled selected>Please select a city first</option>
+                                    </select>
+                                    <label for="parking-lot-select">{{ form.parkingLot.label }} <span
+                                            class="text-danger">*</span></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h5 class="section-title"><i class="bi bi-map"></i>Parking Location Map</h5>
+                        <div id="map" class="rounded-3"></div>
+                        <div class="text-muted mt-2"><small>Select a city to view available parking locations</small>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h5 class="section-title"><i class="bi bi-calendar-event"></i>Date & Time</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="bookingDate" name="bookingDate"
+                                           placeholder="Select date" required readonly>
+                                    <label for="bookingDate">Booking Date <span class="text-danger">*</span></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="start-time">Start Time <span class="text-danger">*</span></label>
+                                    <input type="hidden" id="start-time" name="startTime">
+                                    <div class="input-group">
+                                        <select class="form-control hour-select" name="startHour" required
+                                                onchange="checkTimeValidity()">
+                                            {% for i in range(7, 24) %}
+                                            <option value="{{ i }}">{{ i }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <select class="form-control minute-select" name="startMinute" required
+                                                onchange="checkTimeValidity()">
+                                            <option value="00">00</option>
+                                            <option value="15">15</option>
+                                            <option value="30">30</option>
+                                            <option value="45">45</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group">
+                                    <label for="end-time">End Time <span class="text-danger">*</span></label>
+                                    <input type="hidden" id="end-time" name="endTime">
+                                    <div class="input-group">
+                                        <select class="form-control hour-select" name="endHour" required
+                                                onchange="checkTimeValidity()">
+                                            {% for i in range(7, 24) %}
+                                            <option value="{{ i }}">{{ i }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <select class="form-control minute-select" name="endMinute" required
+                                                onchange="checkTimeValidity()">
+                                            <option value="00">00</option>
+                                            <option value="15">15</option>
+                                            <option value="30">30</option>
+                                            <option value="45">45</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="time-error" class="text-danger mt-2"></div>
+                    </div>
+
+                    <div class="mt-4">
+                        <h6 class="text-muted mb-3">Spot Types</h6>
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="d-flex align-items-center">
+                                <span class="spot-type-indicator spot-available"></span>
+                                <small>Available</small>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <span class="spot-type-indicator spot-taken"></span>
+                                <small>Taken</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6 form-column form-right">
+                    <div id="parking-lot-container" style="display: none;">
+                        <h5 class="section-title"><i class="bi bi-p-square-fill"></i>Available Spots</h5>
+                        <div class="alert alert-info" id="parking-lot-status">
+                            <i class="bi bi-info-circle-fill me-2"></i>Please select location, date and time to see
+                            available spots
+                        </div>
+                        <div class="parking-lot-visualisation">
+                            <svg id="parking-svg"
+                                 viewBox="0 0 419 254"
+                                 xmlns="http://www.w3.org/2000/svg"
+                                 style="width: 419px; height: 254px;">
+                                <image id="parking-image" href="" x="0" y="0" width="419" height="254"></image>
+                                <g id="spot-rects-group"></g>
+                            </svg>
+                        </div>
+                        <input type="hidden" name="spotId" id="selected-spot-id">
+                    </div>
+
+
+                    <div class="ai-recommendation">
+                        <div class="ai-recommendation-header">
+                            <i class="ai-sparkle-icon bi bi-stars"></i>
+                            <h6 class="mb-0" style="font-size: 0.95rem;">AI Insights</h6>
+                        </div>
+                        <div class="ai-recommendation-content">
+                            <div id="ai-random-message">
+                                <p class="mb-2"><small>Select a time to see AI-powered spot suggestions based on your
+                                    preferences</small></p>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div id="spot-summary" class="mt-4 p-3 bg-light rounded" style="display: none;">
+                        <h6 class="mb-3">Your Selection</h6>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Location:</small>
+                            <small id="summary-location">-</small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Date:</small>
+                            <small id="summary-date">-</small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Time:</small>
+                            <small id="summary-time">-</small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="text-muted">Spot:</small>
+                            <small id="summary-spot">-</small>
+                        </div>
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between">
+                            <small class="text-muted">Total:</small>
+                            <small class="fw-bold" id="summary-price">€12.00</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-divider"></div>
+            <div class="d-grid mt-4">
+                <button type="submit" class="btn btn-primary btn-lg py-3" disabled id="submit-button">
+                    <i class="bi bi-check-circle-fill me-2"></i>Confirm Booking
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<!-- Add Mapbox GL JS CSS and JS -->
-<link href="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://js.stripe.com/v3/"></script>
 
 <script>
-// Mapbox access token
-mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
-
-// Initialize the map
-var map = new mapboxgl.Map({
-    container: "map",
-    style: "mapbox://styles/mapbox/streets-v11",
-    center: [33.4299, 35.1264], // Cyprus coordinates [lng, lat]
-    zoom: 7
-});
-
-// Add navigation controls
-map.addControl(new mapboxgl.NavigationControl());
-
-
-const submitButton = document.getElementById("submit-button");
-
-function validateBookingTime(bool) {
-    const startHour = parseInt(document.querySelector('[name="startHour"]').value);
-    const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
-    const endHour = parseInt(document.querySelector('[name="endHour"]').value);
-    const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
-
-    // Check if end time is before start time
-    if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
-        submitButton.disabled = true;
-        // Optional: show error message
-
-        if (bool != true){
-
-            if (!document.getElementById("time-error")) {
-                const errorDiv = document.createElement("div");
-                errorDiv.id = "time-error";
-                errorDiv.className = "text-danger mt-2";
-                errorDiv.textContent = "End time must be after start time";
-                document.querySelector('.form-group:last-child').appendChild(errorDiv);
-            }
-        }
-    } else {
-        submitButton.disabled = false;
-        const errorDiv = document.getElementById("time-error");
-        if (errorDiv) errorDiv.remove();
-    }
-}
-
-// Add event listeners to time selects
-document.querySelectorAll('[name="startHour"], [name="startMinute"], [name="endHour"], [name="endMinute"]').forEach(select => {
-    select.addEventListener('change', validateBookingTime);
-});
-
-// Modify your form submit handler
-document.querySelector('form').addEventListener('submit', function(e) {
-    // Combine hour + minute into startTime/endTime fields
-    const startHour = document.querySelector('[name="startHour"]').value;
-    const startMinute = document.querySelector('[name="startMinute"]').value;
-    document.getElementById('start-time').value = `${startHour}:${startMinute}`;
-
-    const endHour = document.querySelector('[name="endHour"]').value;
-    const endMinute = document.querySelector('[name="endMinute"]').value;
-    document.getElementById('end-time').value = `${endHour}:${endMinute}`;
-
-    // Validate again on submit
-    validateBookingTime();
-
-    // Prevent submission if validation fails
-    if (submitButton.disabled) {
-        e.preventDefault();
-    }
-});
-
-// Function to handle city selection change
-function cityChanged(selectElement) {
-    const cityId = selectElement.value;
-    const cityName = selectElement.options[selectElement.selectedIndex].text;
-    const parkingInfo = document.getElementById("parking-info");
-
-    parkingInfo.style.display = "none"
-
-    // Zoom to the selected city
-    zoomToCity(cityName);
-
-    // Fetch parking lots for the selected city
-    fetch("/city_selected", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({city: cityId})
-    })
-    .then(response => response.json())
-    .then(data => {
-        const parkingSelect = document.getElementById("parking-lot-select");
-        parkingSelect.innerHTML = '<option value="" disabled selected hidden>Select a parking lot</option>';
-
-        // Clear previous markers
-
-        data.forEach(lot => {
-            const option = document.createElement("option");
-            option.value = lot.id;
-            option.textContent = lot.name;
-            option.dataset.address = lot.address; // Store address for geocoding
-            parkingSelect.appendChild(option);
-        });
-
-        parkingSelect.disabled = false;
+    // Init map
+    mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
+    const map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/streets-v11",
+        center: [33.4299, 35.1264],
+        zoom: 7
     });
-}
 
-// Function to handle parking lot selection
-function parkingLotSelected(selectElement) {
-    const parkingLotId = selectElement.value;
-    const address = selectElement.options[selectElement.selectedIndex].dataset.address;
-    const parkingInfo = document.getElementById("parking-info");
+    map.addControl(new mapboxgl.NavigationControl());
+    map.addControl(new mapboxgl.GeolocateControl({
+        positionOptions: {
+            enableHighAccuracy: true
+        },
+    }));
+
+    document.addEventListener("DOMContentLoaded", function () {
+        flatpickr("#bookingDate", {
+            minDate: "today",
+            dateFormat: "Y-m-d",
+            onChange: function (selectedDates, dateStr, instance) {
+                document.getElementById("summary-date").textContent = dateStr;
+                checkTimeValidity();
+                updateStepIndicator();
+                updateSpotSummary();
+            }
+        });
+
+        map.on("load", function () {
+            addCityMarkers();
+        });
+
+    });
+
+    let cityMarkers = [];
+    let parkingLotMarkers = [];
 
 
+    function clearParkingLotMarkers() {
+        parkingLotMarkers.forEach(marker => marker.remove());
+        parkingLotMarkers = [];
+    }
+
+    function clearCityMarkers() {
+        cityMarkers.forEach(marker => marker.remove());
+        cityMarkers = [];
+    }
+
+    function addCityMarkers() {
+        clearCityMarkers();
+
+        const cityOptions = document.getElementById("city-select").options;
+
+        for (let i = 0; i < cityOptions.length; i++) {
+            const cityName = cityOptions[i].text;
+            if (!cityName || cityName === "Select a city") continue;
+
+            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.features && data.features.length > 0) {
+                        const marker = new mapboxgl.Marker({color: "#d11a2a"})
+                            .setLngLat(data.features[0].center)
+                            .setPopup(new mapboxgl.Popup().setHTML(`<h6>${cityName}</h6>`))
+                            .addTo(map);
+                        cityMarkers.push(marker);
+                    }
+                });
+        }
+    }
 
 
-    submitButton.disabled = true;
+    function updateStepIndicator() {
+        const steps = document.querySelectorAll(".step");
+        const citySelected = document.getElementById("city-select").value !== "";
+        const dateSelected = document.getElementById("bookingDate").value !== "";
+        const spotSelected = document.getElementById("selected-spot-id").value !== "";
+
+        steps.forEach((step, index) => {
+            step.classList.remove("active", "completed");
+
+            if (index === 0 && citySelected) {
+                step.classList.add("completed");
+                steps[1].classList.add("active");
+            }
+
+            if (index === 1 && dateSelected) {
+                step.classList.add("completed");
+                steps[2].classList.add("active");
+            }
+
+            if (index === 2 && spotSelected) {
+                step.classList.add("completed");
+                steps[3].classList.add("active");
+            }
+        });
+    }
+
+    function checkTimeValidity() {
+        const bookingDate = document.getElementById("bookingDate").value;
+        const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
+        const startHour = parseInt(document.querySelector('[name="startHour"]').value);
+        const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
+        const endHour = parseInt(document.querySelector('[name="endHour"]').value);
+        const errorDiv = document.getElementById("time-error");
+
+        let isValid = true;
+        let errorMessage = "";
+
+        if (!bookingDate) {
+            isValid = false;
+            errorMessage = "Please select a booking date.";
+        } else if (endHour < startHour) {
+            isValid = false;
+            errorMessage = "End time must be after start time.";
+        } else if (endHour === startHour && endMinute <= startMinute) {
+            isValid = false;
+            errorMessage = "End time must be after start time.";
+
+        }
+
+        errorDiv.textContent = errorMessage;
+        document.getElementById("submit-button").disabled = !isValid;
 
 
+        const parkingLotId = document.getElementById("parking-lot-select").value;
+        if (parkingLotId && isValid) {
+            fetchSpotStatus();
+        }
 
-    fetch("/check_parking_capacity", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ parkingLotId: parkingLotId })
+
+        if (parkingLotId && bookingDate && startHour && endHour) {
+            displayRandomAIMessage();
+        }
+
+
+        document.getElementById("summary-time").textContent = `${startHour.toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")} - ${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
+        updateStepIndicator();
+        updateSpotSummary();
+    }
+
+    function cityChanged(selectElement) {
+
+        clearParkingLotMarkers();
+        clearCityMarkers();
+
+        const cityId = selectElement.value;
+        const cityName = selectElement.options[selectElement.selectedIndex].text;
+
+        const parkingLotSelect = document.getElementById("parking-lot-select");
+        parkingLotSelect.innerHTML = '<option value="" disabled selected>Select a parking lot</option>';
+        parkingLotSelect.disabled = true;
+        document.getElementById("parking-lot-container").style.display = "none";
+        document.getElementById("spot-rects-group").innerHTML = "";
+        document.getElementById("selected-spot-id").value = "";
+        document.getElementById("submit-button").disabled = true;
+
+        cityMarkers.forEach(marker => marker.remove());
+        cityMarkers = [];
+        parkingLotMarkers.forEach(marker => marker.remove());
+
+
+        zoomToCity(cityName);
+        updateStepIndicator();
+        updateSpotSummary();
+
+        fetch("/city_selected", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({city: cityId})
         })
-        .then(response => response.json())
-        .then(data => {
-            parkingInfo.style.display = 'block';
-            if (data.isFull) {
-                parkingInfo.textContent = "No available spots left";
-                parkingInfo.className = "text-danger";
-                bool = true;
-                validateBookingTime(bool);
-            } else {
-                parkingInfo.textContent = `${data.available} spots available (of ${data.capacity})`;
-                parkingInfo.className = "text-success";
-                bool = true;
-                validateBookingTime(bool);
-            }
-        });
+            .then(response => response.json())
+            .then(data => {
+                parkingLotSelect.innerHTML = '<option value="" disabled selected>Select a parking lot</option>';
 
+                data.forEach(lot => {
+                    const option = document.createElement("option");
+                    option.value = lot.id;
+                    option.textContent = lot.name;
+                    option.dataset.address = lot.address;
+                    parkingLotSelect.appendChild(option);
 
+                    if (lot.address) {
+                        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lot.address)}.json?access_token=${mapboxgl.accessToken}`)
+                            .then(response => response.json())
+                            .then(geoData => {
+                                if (geoData.features && geoData.features.length > 0) {
+                                    const marker = new mapboxgl.Marker({color: "#4361ee"})
+                                        .setLngLat(geoData.features[0].center)
+                                        .setPopup(new mapboxgl.Popup().setHTML(`<h6>${lot.name}</h6><p>${lot.address}</p>`))
+                                        .addTo(map);
+                                    parkingLotMarkers.push(marker);
+                                }
+                            });
+                    }
 
-
-
-
-    // Geocode the address using Mapbox Geocoding API
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address + ", Cyprus")}.json?access_token=${mapboxgl.accessToken}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                const coordinates = data.features[0].center;
-
-                // Zoom to the location
-                map.flyTo({
-                    center: coordinates,
-                    zoom: 16
-                });
-            }
-        });
-}
-
-// Function to zoom to selected city
-function zoomToCity(cityName) {
-    if (!cityName) return;
-
-
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.features && data.features.length > 0) {
-                // Find the most relevant result (usually the first one)
-                const feature = data.features[0];
-                const coordinates = feature.center;
-
-                // Fly to the location with appropriate zoom
-                map.flyTo({
-                    center: coordinates,
-                    zoom: 12, // Good city-level zoom
-                    essential: true // This ensures the animation happens
                 });
 
+                parkingLotSelect.disabled = false;
+            });
+    }
 
+
+    function parkingLotSelected() {
+        const select = document.getElementById("parking-lot-select");
+        const selectedOption = select.options[select.selectedIndex];
+        const parkingLotAddress = selectedOption.dataset.address;
+
+        document.getElementById("parking-lot-container").style.display = "none";
+        document.getElementById("selected-spot-id").value = "";
+        document.getElementById("submit-button").disabled = true;
+
+        document.getElementById("summary-location").textContent = selectedOption.textContent;
+
+        const bookingDate = document.getElementById("bookingDate").value;
+        const startHour = document.querySelector('[name="startHour"]').value;
+        const endHour = document.querySelector('[name="endHour"]').value;
+
+        if (bookingDate && startHour && endHour) {
+            displayRandomAIMessage();
+        }
+
+
+        if (parkingLotAddress) {
+            fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(parkingLotAddress)}.json?access_token=${mapboxgl.accessToken}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.features && data.features.length > 0) {
+                        map.flyTo({
+                            center: data.features[0].center,
+                            zoom: 17
+                        });
+
+
+                    }
+                })
+                .catch(error => {
+                    console.error("Geocoding error:", error);
+                });
+        }
+        change = true;
+        checkTimeValidity();
+        updateStepIndicator();
+        updateSpotSummary();
+    }
+
+    function fetchSpotStatus() {
+        const parkingLotId = document.getElementById("parking-lot-select").value;
+        const bookingDate = document.getElementById("bookingDate").value;
+        const startHour = document.querySelector("[name=\"startHour\"]").value.padStart(2, "0");
+        const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
+        const endHour = document.querySelector("[name=\"endHour\"]").value.padStart(2, "0");
+        const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
+        const startTime = `${startHour}:${startMinute}`;
+        const endTime = `${endHour}:${endMinute}`;
+
+
+        document.getElementById("parking-lot-container").style.display = "block";
+        document.getElementById("parking-lot-status").className = "alert alert-info";
+        document.getElementById("parking-lot-status").innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Checking availability...';
+        document.getElementById("selected-spot-id").value = "";
+        document.getElementById("submit-button").disabled = true;
+        document.getElementById("spot-summary").style.display = "none";
+
+        fetch("/check_spot_availability", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                parkingLotId: parkingLotId,
+                bookingDate: bookingDate,
+                startTime: startTime,
+                endTime: endTime,
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                renderParkingSpots(data);
+                updateStepIndicator();
+                updateSpotSummary();
+            })
+            .catch(error => {
+                console.error("Error fetching spot status:", error);
+                document.getElementById("parking-lot-status").className = "alert alert-danger";
+                document.getElementById("parking-lot-status").innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>Error loading spots. Please try again.';
+            });
+    }
+
+    function renderParkingSpots(data) {
+        const parkingImage = document.getElementById("parking-image");
+        const spotRectsGroup = document.getElementById("spot-rects-group");
+
+        parkingImage.setAttribute("href", `/static/images/${data.image_filename}`);
+        spotRectsGroup.innerHTML = "";
+
+        let availableCount = 0;
+        data.spots.forEach(spot => {
+            if (spot.is_available) availableCount++;
+
+            const [x, y, width, height] = spot.svgCoords.split(",");
+
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", x);
+            rect.setAttribute("y", y);
+            rect.setAttribute("width", width);
+            rect.setAttribute("height", height);
+            rect.setAttribute("rx", "5");
+            rect.setAttribute("ry", "5");
+            rect.setAttribute("id", `spot-${spot.id}`);
+            rect.classList.add("parking-spot-rect");
+            rect.classList.toggle("available", spot.is_available);
+            rect.classList.toggle("taken", !spot.is_available);
+
+            if (spot.is_available) {
+                rect.addEventListener("click", () => {
+                    const currentSelectedId = document.getElementById("selected-spot-id").value;
+                    const prevSelected = document.querySelector(".parking-spot-rect.selected");
+
+                    if (prevSelected) {
+                        prevSelected.classList.remove("selected");
+                    }
+
+                    if (currentSelectedId !== String(spot.id)) {
+                        document.getElementById("selected-spot-id").value = spot.id;
+                        document.getElementById(`spot-${spot.id}`).classList.add("selected");
+                        document.getElementById("submit-button").disabled = false;
+                        document.getElementById("spot-summary").style.display = "block";
+                        document.getElementById("summary-spot").textContent = `Spot #${spot.id}`;
+                        document.getElementById("summary-price").textContent = `€${spot.pricePerHour.toFixed(2)*8}`;
+                    } else {
+                        document.getElementById("selected-spot-id").value = "";
+                        document.getElementById("submit-button").disabled = true;
+                        document.getElementById("spot-summary").style.display = "none";
+                    }
+
+                    updateStepIndicator();
+                    updateSpotSummary();
+                });
             }
-
+            spotRectsGroup.appendChild(rect);
         });
-}
 
-// Function to clear all markers
+        const statusElement = document.getElementById("parking-lot-status");
+        if (availableCount > 0) {
+            statusElement.className = "alert alert-success";
+            statusElement.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${availableCount} of ${data.spots.length} spots available`;
+        } else {
+            statusElement.className = "alert alert-warning";
+            statusElement.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>No spots available for selected time`;
+        }
+    }
 
+    function updateSpotSummary() {
+        const spotId = document.getElementById("selected-spot-id").value;
+        if (spotId) {
+            document.getElementById("spot-summary").style.display = "block";
+        } else {
+            document.getElementById("spot-summary").style.display = "none";
+        }
+    }
+
+    function zoomToCity(cityName) {
+        if (!cityName) return;
+
+        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cityName}, Cyprus`)}.json?access_token=${mapboxgl.accessToken}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.features && data.features.length > 0) {
+                    map.flyTo({
+                        center: data.features[0].center,
+                        zoom: 12
+                    });
+                }
+            });
+    }
+
+    document.getElementById("booking-form").addEventListener("submit", function (e) {
+        const startHour = document.querySelector('[name="startHour"]').value.padStart(2, "0");
+        const startMinute = document.querySelector('[name="startMinute"]').value.padStart(2, "0");
+        const endHour = document.querySelector('[name="endHour"]').value.padStart(2, "0");
+        const endMinute = document.querySelector('[name="endMinute"]').value.padStart(2, "0");
+
+        document.getElementById("start-time").value = `${startHour}:${startMinute}`;
+        document.getElementById("end-time").value = `${endHour}:${endMinute}`;
+    });
+
+    const aiMessages = [
+        "Most bookings for this location happen at around 9:30 AM daily",
+        "By 11 AM 94% of spaces are booked in advance for this area",
+        "This location is a hotspot and spaces quickly run out",
+        "Off-peak hours parking reservations drop by 40% in this parking lot",
+        "On weekdays, 85% of bays are booked during peak hours",
+        "Weekend parking demand decreases by 30% compared to weekdays for this location",
+        "Evening parking demand drops sharply after 7:00 PM specifically for this parking lot",
+        "This area experiences high demand on weekdays, with occupancy over 90%",
+        "Reservations for this location peak during business hours from 9:00 AM to 5:00 PM"
+    ];
+
+    let change = false
+
+    function displayRandomAIMessage() {
+
+        if (change === true) {
+
+            const randomMessage = aiMessages[Math.floor(Math.random() * aiMessages.length)];
+            const messageElement = document.getElementById("ai-random-message");
+
+            messageElement.innerHTML = "";
+
+            messageElement.innerHTML = `<small class="d-flex align-items-center gap-1">${randomMessage}</small>`;
+
+            change = false;
+        }
+
+
+    }
 </script>
-
 {% endblock %}

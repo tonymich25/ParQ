@@ -1,7 +1,6 @@
-import re
 from flask_wtf import FlaskForm, RecaptchaField
-from wtforms import StringField, PasswordField, SubmitField, EmailField, IntegerField, SelectField
-from wtforms.validators import DataRequired, EqualTo, ValidationError, Regexp, Length
+from wtforms import StringField, PasswordField, SubmitField, EmailField
+from wtforms.validators import DataRequired, EqualTo, Regexp, Length
 
 
 
