@@ -1,0 +1,15 @@
+{% extends "base1.html" %}
+
+{% block title %}ParQ - Not Found{% endblock %}
+
+{% block content %}
+
+<div class="alert alert-warning">
+    <h1>404 - Page Not Found</h1>
+    <p>The page you are looking for doesn't exist.</p>
+    <p>Check the URL or return to the dashboard.</p>
+    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-primary">Return to Home</a>
+</div>
+
+
+{% endblock %}
