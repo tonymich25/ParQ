@@ -2,6 +2,7 @@ from config import app
 from flask import render_template
 import errors
 
+# Registering errors
 app.register_error_handler(400, errors.bad_request)
 app.register_error_handler(401, errors.unauthorized)
 app.register_error_handler(403, errors.forbidden)
