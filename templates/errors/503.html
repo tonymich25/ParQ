@@ -1,0 +1,14 @@
+{% extends "base1.html" %}
+
+{% block title %}ParQ - SU{% endblock %}
+
+{% block content %}
+
+<div class="alert alert-warning">
+    <h1>503 - Service Unavailable</h1>
+    <p>The server is temporarily unavailable.</p>
+    <p>We're working on fixing this issue.</p>
+    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-primary">Return to Home</a>
+</div>
+
+{% endblock %}
