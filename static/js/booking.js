@@ -1,4 +1,6 @@
-mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
+//require('dotenv').config()
+//mapboxgl.accessToken = process.env.MAPBOX_API;
+mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q"
 const map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/streets-v11",
@@ -156,7 +158,6 @@ function cityChanged(selectElement) {
 
     cityMarkers.forEach(marker => marker.remove());
     cityMarkers = [];
-    parkingLotMarkers.forEach(marker => marker.remove());
 
 
     zoomToCity(cityName);
@@ -176,22 +177,15 @@ function cityChanged(selectElement) {
                 const option = document.createElement("option");
                 option.value = lot.id;
                 option.textContent = lot.name;
-                option.dataset.address = lot.address;
+                option.dataset.lat = lot.lat;
+                option.dataset.long = lot.long;
                 parkingLotSelect.appendChild(option);
-
-                if (lot.address) {
-                    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(lot.address)}.json?access_token=${mapboxgl.accessToken}`)
-                        .then(response => response.json())
-                        .then(geoData => {
-                            if (geoData.features && geoData.features.length > 0) {
-                                const marker = new mapboxgl.Marker({color: "#4361ee"})
-                                    .setLngLat(geoData.features[0].center)
-                                    .setPopup(new mapboxgl.Popup().setHTML(`<h6>${lot.name}</h6><p>${lot.address}</p>`))
-                                    .addTo(map);
-                                parkingLotMarkers.push(marker);
-                            }
-                        });
-                }
+                console.log("Lat",lot.lat, "Long", lot.long)
+                const marker = new mapboxgl.Marker({ color: "#4361ee" })
+                    .setLngLat([lot.lat, lot.long])  // Use coordinates DIRECTLY from your DB
+                    .setPopup(new mapboxgl.Popup().setHTML(`<h6>${lot.name}</h6><p>${lot.address || "No address"}</p>`))
+                    .addTo(map);
+                parkingLotMarkers.push(marker);
 
             });
 
@@ -203,40 +197,35 @@ function cityChanged(selectElement) {
 function parkingLotSelected() {
     const select = document.getElementById("parking-lot-select");
     const selectedOption = select.options[select.selectedIndex];
-    const parkingLotAddress = selectedOption.dataset.address;
+    const parkingLotLat = parseFloat(selectedOption.dataset.lat);
+    const parkingLotLong = parseFloat(selectedOption.dataset.long);
+    const parkingLotName = selectedOption.text;
 
+    // Clear any previous selections
     document.getElementById("parking-lot-container").style.display = "none";
     document.getElementById("selected-spot-id").value = "";
     document.getElementById("submit-button").disabled = true;
 
-    document.getElementById("summary-location").textContent = selectedOption.textContent;
+    // Update summary
+    document.getElementById("summary-location").textContent = parkingLotName;
 
-    const bookingDate = document.getElementById("bookingDate").value;
-    const startHour = document.querySelector('[name="startHour"]').value;
-    const endHour = document.querySelector('[name="endHour"]').value;
+    // Zoom to the location directly using coordinates
+    if (!isNaN(parkingLotLong) && !isNaN(parkingLotLat)) {
+        map.flyTo({
+            center: [parkingLotLat, parkingLotLong],
+            zoom: 17
+        });
 
-    if (bookingDate && startHour && endHour) {
-        displayRandomAIMessage();
+        // Add a marker for the parking lot
+        clearParkingLotMarkers();  // Remove previous markers
+        const marker = new mapboxgl.Marker({color: "#4361ee"})
+            .setLngLat([parkingLotLat, parkingLotLong])
+            .setPopup(new mapboxgl.Popup().setHTML(`<h6>${parkingLotName}</h6>`))
+            .addTo(map);
+        parkingLotMarkers.push(marker);
     }
 
-
-    if (parkingLotAddress) {
-        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(parkingLotAddress)}.json?access_token=${mapboxgl.accessToken}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.features && data.features.length > 0) {
-                    map.flyTo({
-                        center: data.features[0].center,
-                        zoom: 17
-                    });
-
-
-                }
-            })
-            .catch(error => {
-                console.error("Geocoding error:", error);
-            });
-    }
+    // Handle other logic
     change = true;
     checkTimeValidity();
     updateStepIndicator();

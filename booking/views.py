@@ -86,7 +86,8 @@ def city_selected():
     return jsonify([{
         'id': lot.id,
         'name': lot.name,
-        'address': lot.address} for lot in parkingLots])
+        'lat': lot.lat,
+        'long': lot.long,} for lot in parkingLots])
 
 
 @booking_bp.route('/check_spot_availability', methods=['POST'])

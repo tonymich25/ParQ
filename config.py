@@ -145,6 +145,8 @@ class ParkingLot(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     city_id = db.Column(db.Integer, db.ForeignKey('cities.id'))
     name = db.Column(db.String(100), nullable=False)
+    lat = db.Column(db.Float(precision=53), nullable=False)
+    long = db.Column(db.Float(precision=53), nullable=False)
     address = db.Column(db.String(100), nullable=False)
     image_filename = db.Column(db.String(100), nullable=True)
     spots = db.relationship('ParkingSpot', backref='parking_lot', lazy=True, cascade="all, delete-orphan")
