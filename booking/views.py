@@ -64,7 +64,7 @@ def payment_success():
 
     if not session_id:
         flash("Invalid payment session. Please try again.", "error")
-        return redirect(url_for('booking_bp.book'))
+        return redirect(url_for('booking_bp.booking_form'))
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
@@ -99,7 +99,7 @@ def payment_success():
                 spot.heldUntil = None
 
                 flash("Spot taken during payment. Refund issued.", "error")
-                return redirect(url_for('booking_bp.book'))
+                return redirect(url_for('booking_bp.booking_form'))
 
 
         spot.heldUntil = None
@@ -127,14 +127,14 @@ def payment_success():
         spot.heldUntil = None
         current_app.logger.error(f"Stripe error: {str(e)}")
         flash("Payment processing error. Please contact support.", "error")
-        return redirect(url_for('booking_bp.book'))
+        return redirect(url_for('booking_bp.booking_form'))
     except Exception as e:
         emit_to_relevant_rooms_about_booking(spot, booking_date, True, None)
         spot.heldBy = None
         spot.heldUntil = None
         current_app.logger.error(f"Unexpected error: {str(e)}")
         flash("Error processing your booking. Please contact support.", "error")
-        return redirect(url_for('booking_bp.book'))
+        return redirect(url_for('booking_bp.booking_form'))
 
 
 def generate_qr_code(new_booking_id):
@@ -214,7 +214,7 @@ def create_stripe_session(data, startTime, endTime, spot):
             }],
             mode='payment',
             success_url=url_for('booking_bp.payment_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=url_for('booking_bp.book', _external=True),
+            cancel_url=url_for('booking_bp.booking_form', _external=True),
             metadata={
                 'user_id': current_user.get_id(),
                 'spot_id': data.get('spotId'),
