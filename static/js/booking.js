@@ -14,7 +14,7 @@ map.addControl(new mapboxgl.GeolocateControl({
         enableHighAccuracy: true
     },
 }));
-
+// For date picker
 document.addEventListener("DOMContentLoaded", function () {
     flatpickr("#bookingDate", {
         minDate: "today",
@@ -180,8 +180,8 @@ function cityChanged(selectElement) {
                 option.dataset.lat = lot.lat;
                 option.dataset.long = lot.long;
                 parkingLotSelect.appendChild(option);
-                console.log("Lat",lot.lat, "Long", lot.long)
-                const marker = new mapboxgl.Marker({ color: "#4361ee" })
+                console.log("Lat", lot.lat, "Long", lot.long)
+                const marker = new mapboxgl.Marker({color: "#4361ee"})
                     .setLngLat([lot.lat, lot.long])  // Use coordinates DIRECTLY from your DB
                     .setPopup(new mapboxgl.Popup().setHTML(`<h6>${lot.name}</h6><p>${lot.address || "No address"}</p>`))
                     .addTo(map);
@@ -200,6 +200,7 @@ function parkingLotSelected() {
     const parkingLotLat = parseFloat(selectedOption.dataset.lat);
     const parkingLotLong = parseFloat(selectedOption.dataset.long);
     const parkingLotName = selectedOption.text;
+    const parkingLotId = documen.getElementById('parking-lot-select').value;
 
     // Clear any previous selections
     document.getElementById("parking-lot-container").style.display = "none";
@@ -228,9 +229,64 @@ function parkingLotSelected() {
     // Handle other logic
     change = true;
     checkTimeValidity();
+
+    openWebSocketConnection(parkingLotId);
+
+
     updateStepIndicator();
     updateSpotSummary();
 }
+
+
+function openWebSocketConnection(parkingLotId) {
+
+
+    if (socket
+    ) {
+        socket.close();
+    }
+    console.log('Opening a new webSocket connection')
+
+    socket = new WebSocket('ws://127.0.0.1:5000/ws');
+
+    socket.onopen = () => {
+        console.log('Connection re-established');
+        const subscriptionMessage = {
+            type: 'subscribe',
+            parkingLotId: parkingLotId,
+            bookingDate: bookingDate,
+            startTime: startTime,
+            endTime: endTime,
+        }
+        socket.send(JSON.stringify(subscriptionMessage))
+    };
+
+    socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'spot_update') {
+            updateSpotAvailability(data.spotId, data.isAvailable);
+        } else if (data.type === 'batch_update') {
+            renderParkingSpots(data);
+        }
+        else if (data.type === 'payment_redirect') {
+            renderParkingSpots(data);
+        }
+        else if (data.type === 'booking_failed') {
+            renderParkingSpots(data);
+        }
+    }
+
+
+    // TODO: Change to real logging
+    socket.onclose = () => {
+        console.log('WebSocket connection closed.')
+    }
+    socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    }
+}
+
 
 function fetchSpotStatus() {
     const parkingLotId = document.getElementById("parking-lot-select").value;
@@ -362,10 +418,49 @@ function zoomToCity(cityName) {
 }
 
 document.getElementById("booking-form").addEventListener("submit", function (e) {
-    const startHour = document.querySelector('[name="startHour"]').value.padStart(2, "0");
-    const startMinute = document.querySelector('[name="startMinute"]').value.padStart(2, "0");
-    const endHour = document.querySelector('[name="endHour"]').value.padStart(2, "0");
-    const endMinute = document.querySelector('[name="endMinute"]').value.padStart(2, "0");
+    const startHour = document.getElementById('startHour').value;
+    const startMinute = document.getElementById('startMinute').value;
+    const endHour = document.getElementById('endHour').value;
+    const endMinute = document.getElementById('endMinute').value;
+
+    const spotId = document.getElementById("selected-spot-id").value;
+    const parkingLotId = document.getElementById("parking-lot-select").value;
+    const bookingDate = document.getElementById("bookingDate").value;
+
+    if (!window.socket || window.socket.readyState !== WebSocket.OPEN) {
+        alert("Connection lost. Please refresh and try again.");
+        return;
+    }
+
+    try {
+        // Disable button during processing
+        const submitBtn = document.getElementById("submit-button");
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Booking...';
+
+        // Send booking request via WebSocket
+        const bookingMsg = {
+            type: "book_spot",
+            spotId: spotId,
+            parkingLotId: parkingLotId,
+            bookingDate: bookingDate,
+            startHour : startHour,
+            startMinute : startMinute,
+            endHour : endHour,
+            endMinute : endMinute,
+            //userId: currentUserId // You'll need to pass this from Flask's template
+        };
+
+        window.socket.send(JSON.stringify(bookingMsg));
+
+        // Handle response via socket.onmessage (see next section)
+    } catch (err) {
+        console.error("Booking error:", err);
+        alert("Booking failed. Please try again.");
+        document.getElementById("submit-button").disabled = false;
+        document.getElementById("submit-button").innerHTML = 'Confirm Booking';
+    }
+
 
     document.getElementById("start-time").value = `${startHour}:${startMinute}`;
     document.getElementById("end-time").value = `${endHour}:${endMinute}`;
