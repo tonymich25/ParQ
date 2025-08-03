@@ -6,6 +6,7 @@ from flask import Flask, url_for
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.menu import MenuLink
+from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
@@ -32,6 +33,10 @@ login_manager.login_message_category = "warning"
 STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 stripe.api_key = STRIPE_SECRET_KEY
+
+
+socketio = SocketIO(app)
+
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -159,6 +164,8 @@ class ParkingSpot(db.Model, UserMixin):
     spotNumber = db.Column(db.String(20), nullable=False)
     svgCoords = db.Column(db.String(100), nullable=False)
     pricePerHour = db.Column(db.Float, nullable=False)
+    heldBy = db.Column(db.Integer, nullable=True)
+    heldUntil = db.Column(db.DateTime, nullable=True)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
 
