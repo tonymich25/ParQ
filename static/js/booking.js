@@ -204,6 +204,7 @@ function parkingLotSelected() {
     }
 
     change = true;
+    openWebSocketConnection(document.getElementById('parking-lot-select').value);
     checkTimeValidity();
 
     updateStepIndicator();
@@ -227,8 +228,16 @@ function parkingLotSelected() {
 let socket = null;
 
 function openWebSocketConnection(parkingLotId) {
-    if (socket) {
-        socket.disconnect();
+    const bookingDate = document.getElementById("bookingDate").value;
+    if (!bookingDate || !parkingLotId) return;
+    // Only reconnect if necessary
+    if (socket && socket.connected) {
+        // Just update subscription if already connected
+        socket.emit('subscribe', {
+            parkingLotId: parkingLotId,
+            bookingDate: bookingDate
+        });
+        return;
     }
 
     socket = io('http://127.0.0.1:5000');
@@ -250,15 +259,20 @@ function openWebSocketConnection(parkingLotId) {
             type: 'subscribe',
             parkingLotId: parkingLotId,
             bookingDate: bookingDate,
-            startTime: startTime,
-            endTime: endTime
         });
     });
+
+
+    socket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err);
+        setTimeout(() => openWebSocketConnection(parkingLotId), 1000);
+    });
+
 
     // Keep your existing message handlers
     socket.on('spot_update', (data) => {
         console.log('Spot update received:', data);
-        updateSpotAvailability(data.spotId, data.isAvailable);
+        updateSpotAvailability(data.spotId, data.available);
     });
 
     socket.on('batch_update', (data) => {
@@ -278,34 +292,41 @@ function openWebSocketConnection(parkingLotId) {
 }
 
 function updateSpotAvailability(spotId, isAvailable) {
+    console.log(`Updating spot ${spotId} to ${isAvailable ? 'available' : 'taken'}`);
     const spotElement = document.getElementById(`spot-${spotId}`);
-    if (!spotElement) return;
+    if (!spotElement) {
+        console.log(`Spot element ${spotId} not found`);
+        return;
+    }
 
-    // Reset all classes and styles
-    spotElement.className = 'parking-spot-rect';
-    spotElement.onclick = null;
-    spotElement.style.cursor = '';
-    spotElement.style.pointerEvents = '';
+    // Remove all state classes
+    spotElement.classList.remove('available', 'taken', 'selected');
 
     if (isAvailable) {
         spotElement.classList.add('available');
         spotElement.style.cursor = 'pointer';
-        spotElement.onclick = () => handleSpotClick(spotId);
+        spotElement.style.pointerEvents = 'auto';
+
+        // Completely replace the onclick handler
+        spotElement.onclick = null;
+        spotElement.onclick = function() {
+            handleSpotClick(spotId);
+        };
     } else {
         spotElement.classList.add('taken');
         spotElement.style.cursor = 'not-allowed';
         spotElement.style.pointerEvents = 'none';
+        spotElement.onclick = null;
     }
 
-    // Handle selection state if this was the selected spot
+    // If this was selected spot, clear selection
     if (!isAvailable && document.getElementById("selected-spot-id").value === String(spotId)) {
         document.getElementById("selected-spot-id").value = "";
         document.getElementById("submit-button").disabled = true;
         document.getElementById("spot-summary").style.display = "none";
-        spotElement.classList.remove("selected");
-        updateStepIndicator();
-        updateSpotSummary();
     }
+
+    console.log(`Spot ${spotId} UI updated successfully`);
 }
 
 // Your existing fetchSpotStatus (unchanged)
@@ -376,30 +397,10 @@ function renderParkingSpots(data) {
         rect.classList.toggle("taken", !spot.is_available);
 
         if (spot.is_available) {
-            rect.addEventListener("click", () => {
-                const currentSelectedId = document.getElementById("selected-spot-id").value;
-                const prevSelected = document.querySelector(".parking-spot-rect.selected");
-
-                if (prevSelected) {
-                    prevSelected.classList.remove("selected");
-                }
-
-                if (currentSelectedId !== String(spot.id)) {
-                    document.getElementById("selected-spot-id").value = spot.id;
-                    document.getElementById(`spot-${spot.id}`).classList.add("selected");
-                    document.getElementById("submit-button").disabled = false;
-                    document.getElementById("spot-summary").style.display = "block";
-                    document.getElementById("summary-spot").textContent = `Spot #${spot.id}`;
-                    document.getElementById("summary-price").textContent = `€${spot.pricePerHour.toFixed(2) * 8}`;
-                } else {
-                    document.getElementById("selected-spot-id").value = "";
-                    document.getElementById("submit-button").disabled = true;
-                    document.getElementById("spot-summary").style.display = "none";
-                }
-
-                updateStepIndicator();
-                updateSpotSummary();
-            });
+            // Use direct onclick assignment for SVG elements
+            rect.onclick = function() {
+                handleSpotClick(spot.id);
+            };
         }
         spotRectsGroup.appendChild(rect);
     });
@@ -419,22 +420,37 @@ function handleSpotClick(spotId) {
     const prevSelected = document.querySelector(".parking-spot-rect.selected");
     const spotElement = document.getElementById(`spot-${spotId}`);
 
-    if (prevSelected) {
+    if (prevSelected && prevSelected !== spotElement) {
         prevSelected.classList.remove("selected");
     }
 
     if (currentSelectedId !== String(spotId)) {
+        // Select the new spot
         document.getElementById("selected-spot-id").value = spotId;
         spotElement.classList.add("selected");
         document.getElementById("submit-button").disabled = false;
         document.getElementById("spot-summary").style.display = "block";
+
+        // Get the price from the data attribute or fetch it
+        const startHour = document.querySelector('[name="startHour"]').value;
+        const startMinute = document.querySelector('[name="startMinute"]').value;
+        const endHour = document.querySelector('[name="endHour"]').value;
+        const endMinute = document.querySelector('[name="endMinute"]').value;
+
+        // Calculate price (you might want to adjust this based on your pricing logic)
+        const pricePerHour = 5; // Default or fetch actual price
+        const hours = (parseInt(endHour) - parseInt(startHour)) +
+                     (parseInt(endMinute) - parseInt(startMinute)) / 60;
+        const totalPrice = (pricePerHour * hours).toFixed(2);
+
         document.getElementById("summary-spot").textContent = `Spot #${spotId}`;
-        // You might want to fetch the price from a data attribute or another source
-        document.getElementById("summary-price").textContent = `€${55}`;
+        document.getElementById("summary-price").textContent = `€${totalPrice}`;
     } else {
+        // Deselect if clicking the same spot
         document.getElementById("selected-spot-id").value = "";
         document.getElementById("submit-button").disabled = true;
         document.getElementById("spot-summary").style.display = "none";
+        spotElement.classList.remove("selected");
     }
 
     updateStepIndicator();

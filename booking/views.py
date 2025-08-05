@@ -20,6 +20,7 @@ booking_bp = Blueprint('booking_bp', __name__, template_folder='templates')
 active_rooms = defaultdict(set)  # Format: {"lot_1_2023-12-25": set("socket_id1", "socket_id2")}
 active_connections = {}
 room_in_payment = defaultdict(set)
+spot_holds = {}
 
 @booking_bp.route('/booking', methods=['GET', 'POST'])
 @login_required
@@ -94,23 +95,18 @@ def payment_success():
                                  booking_date, start_time, end_time) > 0:
                 # Spot taken → Refund
                 stripe.Refund.create(payment_intent=session.payment_intent)
-                emit_to_relevant_rooms_about_booking(spot, booking_date, True, None)
+                emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
 
-                spot.heldBy = None
-                spot.heldUntil = None
+                if spot.id in spot_holds:
+                    del spot_holds[spot.id]
 
                 flash("Spot taken during payment. Refund issued.", "error")
                 return redirect(url_for('booking_bp.booking_form'))
 
-
-
-        spot.heldUntil = None
+        if spot.id in spot_holds:
+            del spot_holds[spot.id]
 
         new_booking = create_booking(session, spot)
-
-
-
-
 
         db.session.add(new_booking)
         db.session.commit()
@@ -127,14 +123,14 @@ def payment_success():
         return redirect(url_for('dashboard.dashboard'))
 
     except stripe.error.StripeError as e:
-        emit_to_relevant_rooms_about_booking(spot, booking_date, True, None)
+        emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
         spot.heldBy = None
         spot.heldUntil = None
         current_app.logger.error(f"Stripe error: {str(e)}")
         flash("Payment processing error. Please contact support.", "error")
         return redirect(url_for('booking_bp.booking_form'))
     except Exception as e:
-        emit_to_relevant_rooms_about_booking(spot, booking_date, True, None)
+        emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
         spot.heldBy = None
         spot.heldUntil = None
         current_app.logger.error(f"Unexpected error: {str(e)}")
@@ -176,7 +172,7 @@ def emit_to_relevant_rooms_about_booking(spot, bookingDate, isAvailable, return_
         print(f"Active rooms: {active_rooms}")
 
         if target_room in active_rooms:
-            emit('spot_update', message, room=target_room)
+            socketio.emit('spot_update', message, room=target_room)
             print(f"Emitted update for spot {spot.id} to room {target_room}")
             current_app.logger.debug(f"Emitted to: Spot {spot.id} availability={isAvailable} to {target_room}")
         else:
@@ -202,11 +198,14 @@ def handle_connect():
 def handle_disconnect():
     # TODO: ON DISCONNECT NEED TO EMIT BACK ANYTHING THAT USER WAS HOLDING0
 
-    # TODO PLUS NEED TO STOP USER FROM BEING ABLE TO PRESS THAT SPOT
-    # TODO PLUS NEED TO TEST FROM GOING FROM TAKEN TO UN-TAKEN
+    #ok = emit_to_relevant_rooms_about_booking(spotid, bookingDate, False, True)
+    #print("Un-blocked spot on disconnect: ", ok)
 
     print("Client disconnected: " + request.sid)
     active_connections.pop(request.sid, None)
+
+
+
 
 
 def calculate_price(startTime, endTime, spotPricePerHour):
@@ -266,46 +265,46 @@ def create_stripe_session(data, startTimeStr, endTimeStr, spot):
 def book_spot(data):
     ok = False
     try:
-        with db.session.begin_nested():
 
-            spot = ParkingSpot.query.get(data.get('spotId'))
+        spot = ParkingSpot.query.get(data.get('spotId'))
+        if not spot:
+            emit('booking_failed', {'reason': 'Invalid spot'})
+            return
 
-            if not spot:
-                emit('booking_failed', {'reason': 'Invalid spot'})
-                return
+        start_time_str = f"{data.get('startHour')}:{data.get('startMinute')}"
+        end_time_str = f"{data.get('endHour')}:{data.get('endMinute')}"
 
-            start_time_str = f"{data.get('startHour')}:{data.get('startMinute')}"
-            end_time_str = f"{data.get('endHour')}:{data.get('endMinute')}"
+        # Convert to time objects for database operations
+        start_time = datetime.strptime(start_time_str, "%H:%M").time()
+        end_time = datetime.strptime(end_time_str, "%H:%M").time()
 
-            # Convert to time objects for database operations
-            start_time = datetime.strptime(start_time_str, "%H:%M").time()
-            end_time = datetime.strptime(end_time_str, "%H:%M").time()
+        if is_spot_available(spot, data.get('parkingLotId'), data.get('bookingDate'), start_time, end_time) > 0:
+            emit('booking_failed', {'reason': 'taken'})
+            return
 
-            if is_spot_available(spot, data.get('parkingLotId'), data.get('bookingDate'), start_time, end_time) > 0:
-                emit('booking_failed', {'reason': 'taken'})
-                return
+        hold_until = datetime.now(ZoneInfo("Europe/Nicosia")) + timedelta(seconds=240)
+        spot_holds[spot.id] = {
+            'held_until': hold_until,
+            'user_id': current_user.get_id(),
+            'parking_lot_id': data.get('parkingLotId'),
+            'booking_date': data.get('bookingDate')
+        }
 
+        db.session.commit()
 
-
-            spot.heldUntil = datetime.now(ZoneInfo("Europe/Nicosia")) + timedelta(minutes=3)
-            spot.heldBy = current_user.get_id()
-            db.session.flush()
-
-            ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True)
-            print("EMITTED ", ok)
+        ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True)
+        print("EMITTED ", ok)
 
         checkout_url = create_stripe_session(data, start_time_str, end_time_str, spot)
         if not checkout_url:
             emit('booking_failed', {'reason': 'Payment system error'})
-            emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, None)
-            spot.heldUntil = None
-            spot.heldBy = None
+            emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, False)
+            del spot_holds[spot.id]  # Remove hold if payment fails
             db.session.flush()
 
             return
 
-        threading.Timer(300, release_spot_if_unpaid(spot, data.get('bookingDate')), args=[spot.id]).start()
-
+        threading.Timer(240, lambda: release_spot_if_unpaid(spot.id, data.get('bookingDate'))).start()
 
         emit('payment_redirect', {
             'url': checkout_url,
@@ -317,7 +316,7 @@ def book_spot(data):
     except Exception as e:
 
         if ok is True:
-            emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, None)
+            emit_to_relevant_rooms_about_booking(data.get('spotId'), data.get('bookingDate'), True, False)
             spot.heldBy = None
             spot.heldUntil = None
 
@@ -330,9 +329,10 @@ def book_spot(data):
 
 def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
     now = datetime.now(ZoneInfo("Europe/Nicosia"))
-
-    if spot.heldUntil and spot.heldUntil > now:
-        return 1  # Spot is held (not available)
+    if spot.id in spot_holds:
+        hold_data = spot_holds[spot.id]
+        if hold_data['held_until'] > now:
+            return 1  # Spot is held (not available)
 
         # Check existing bookings
     return Booking.query.filter(
@@ -344,37 +344,50 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
     ).count()
 
 
-def release_spot_if_unpaid(spot, bookingDate):
+def release_spot_if_unpaid(spot_id, bookingDate):
     with app.app_context():
-        now = datetime.now(ZoneInfo("Europe/Nicosia"))
-        if spot.heldUntil and spot.heldUntil < now:
-            spot.heldUntil = None
-            spot.heldBy = None
-            db.session.commit()
-            emit_to_relevant_rooms_about_booking(spot, bookingDate, True, None)
+        try:
+            print(f"Checking if spot {spot_id} should be released")
+            now = datetime.now(ZoneInfo("Europe/Nicosia"))
 
+            if spot_id in spot_holds:
+                hold_data = spot_holds[spot_id]
+                if hold_data['held_until'] < now:
+                    print(f"Releasing hold on spot {spot_id}")
+                    spot = ParkingSpot.query.get(spot_id)
+                    if spot:
+                        emit_to_relevant_rooms_about_booking(spot, bookingDate, True, False)
+                    del spot_holds[spot_id]
+                else:
+                    print(f"Hold on spot {spot_id} not yet expired")
+            else:
+                print(f"No active hold found for spot {spot_id}")
+
+        except Exception as e:
+            print(f"Error in release_spot_if_unpaid: {str(e)}")
+            current_app.logger.error(f"Error releasing spot {spot_id}: {str(e)}")
 
 
 #@socketio.on('get_spots_availability')
 #def get_spots_availability(data):
 
 
-
-
 @socketio.on('subscribe')
 def handle_join(data):
     parkingLotId = data.get('parkingLotId')
     bookingDate = data.get('bookingDate')
-    print("INSIDE SUBSCRIBE")
 
-    room_name = f"lot_{data['parkingLotId']}_{data['bookingDate']}"
-    print("ROOM NAME JOINED: " , room_name)
-    join_room(room_name)
-    print('User joined room: ' + room_name)
-    active_rooms[room_name].add(request.sid)
+    if not parkingLotId or not bookingDate:
+        return
 
+    room_name = f"lot_{parkingLotId}_{bookingDate}"
 
-
+    # Check if already in room
+    rooms = socketio.server.rooms(request.sid)
+    if room_name not in rooms:
+        join_room(room_name)
+        active_rooms[room_name].add(request.sid)
+        print(f'User joined room: {room_name}')
 
 
 @booking_bp.route('/check_spot_availability', methods=['POST'])
@@ -384,36 +397,55 @@ def check_spot_availability():
         parkingLotId = data.get('parkingLotId')
         startTime_str = data.get('startTime')
         endTime_str = data.get('endTime')
-
         bookingDate = data.get('bookingDate')
+
+        # Convert times
         startTime = datetime.strptime(startTime_str, "%H:%M").time()
         endTime = datetime.strptime(endTime_str, "%H:%M").time()
 
         parkingLot = ParkingLot.query.get(parkingLotId)
-        allSpots = parkingLot.spots
-        spotIds = [s.id for s in allSpots]
+        if not parkingLot:
+            return jsonify({'error': 'Parking lot not found'}), 404
 
-        conflicting_spot_ids = Booking.query.filter(
-            Booking.spot_id.in_(spotIds),
+        now = datetime.now(ZoneInfo("Europe/Nicosia"))
+        allSpots = parkingLot.spots
+        # Get all active holds for this parking lot and date
+        active_holds = {
+            spot_id: hold
+            for spot_id, hold in spot_holds.items()
+            if (hold['held_until'] > now and
+                hold.get('parking_lot_id') == parkingLotId and
+                hold.get('booking_date') == bookingDate)
+        }
+
+        # Get conflicting bookings
+        conflicting_bookings = Booking.query.filter(
+            Booking.parking_lot_id == parkingLotId,
             Booking.bookingDate == bookingDate,
             Booking.startTime < endTime,
-            Booking.endTime > startTime).distinct().with_entities(Booking.spot_id).all()
+            Booking.endTime > startTime
+        ).with_entities(Booking.spot_id).all()
 
-        bookedSpotIds = {item[0] for item in conflicting_spot_ids}
+        booked_spot_ids = {b[0] for b in conflicting_bookings}
+        held_spot_ids = set(active_holds.keys())
 
         spots_data = []
         for spot in allSpots:
+            is_available = (spot.id not in booked_spot_ids and
+                            spot.id not in held_spot_ids)
+
             spots_data.append({
                 'id': spot.id,
                 'spotNumber': spot.spotNumber,
                 'svgCoords': spot.svgCoords,
-                'is_available': spot.id not in bookedSpotIds,
+                'is_available': is_available,
                 'pricePerHour': spot.pricePerHour
             })
 
         return jsonify({
             'image_filename': parkingLot.image_filename,
-            'spots': spots_data
+            'spots': spots_data,
+            'holds': list(held_spot_ids)  # For debugging
         })
 
     except Exception as e:

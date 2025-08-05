@@ -164,8 +164,6 @@ class ParkingSpot(db.Model, UserMixin):
     spotNumber = db.Column(db.String(20), nullable=False)
     svgCoords = db.Column(db.String(100), nullable=False)
     pricePerHour = db.Column(db.Float, nullable=False)
-    heldBy = db.Column(db.Integer, nullable=True)
-    heldUntil = db.Column(db.DateTime, nullable=True)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
 
