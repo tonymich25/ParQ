@@ -23,7 +23,7 @@
     </div>
 
     <div class="form-section">
-        <form method="POST" action="{{ url_for('booking_bp.booking_form') }}" id="booking-form">
+        <form id="booking-form">
             {{ form.hidden_tag() }}
 
             <div class="row">
@@ -210,7 +210,9 @@
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="static/js/booking.js" defer></script>
+
 
 {% endblock %}
