@@ -217,13 +217,18 @@ let socket = null;
 
 function openWebSocketConnection(parkingLotId) {
     const bookingDate = document.getElementById("bookingDate").value;
+    const startTime = document.querySelector('[name="startHour"]').value + ":" +
+                     document.querySelector('[name="startMinute"]').value;
+    const endTime = document.querySelector('[name="endHour"]').value + ":" +
+                   document.querySelector('[name="endMinute"]').value;
     if (!bookingDate || !parkingLotId) return;
     // Only reconnect if necessary
     if (socket && socket.connected) {
-        // Just update subscription if already connected
         socket.emit('subscribe', {
             parkingLotId: parkingLotId,
-            bookingDate: bookingDate
+            bookingDate: bookingDate,
+            startTime: startTime,
+            endTime: endTime
         });
         return;
     }

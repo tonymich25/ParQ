@@ -171,31 +171,50 @@ def disconnect_user(session):
                     sids.remove(sid)
 
 
-def emit_to_relevant_rooms_about_booking(spot, bookingDate, isAvailable, return_confirmation):
+def emit_to_relevant_rooms_about_booking(spot, bookingDate, isAvailable, return_confirmation, start_time=None,
+                                         end_time=None):
     try:
-        message = {
-            'spotId': spot.id,
-            'available': isAvailable,
-        }
-
-        # No need to parse date if it's already in correct format
         target_room = f"lot_{spot.parkingLotId}_{bookingDate}"
-        print(f"Looking for room: {target_room}")
-        print(f"Active rooms: {active_rooms}")
 
-        if target_room in active_rooms:
-            socketio.emit('spot_update', message, room=target_room)
-            print(f"Emitted update for spot {spot.id} to room {target_room}")
-            current_app.logger.debug(f"Emitted to: Spot {spot.id} availability={isAvailable} to {target_room}")
-        else:
-            print(f"Room {target_room} not found in active rooms")
+        if target_room not in active_rooms:
+            return False if return_confirmation else None
 
-        if return_confirmation is True:
+        # Get all connections in the room
+        sids = active_rooms[target_room]
+
+        for sid in list(sids):
+            conn_data = active_connections.get(sid)
+            if not conn_data:
+                continue
+
+            # Check if this connection's time range overlaps with the update
+            conn_start = datetime.strptime(conn_data['startTime'], "%H:%M").time() if conn_data['startTime'] else None
+            conn_end = datetime.strptime(conn_data['endTime'], "%H:%M").time() if conn_data['endTime'] else None
+
+            # If no specific times in update, send to everyone
+            if not start_time or not end_time:
+                message = {
+                    'spotId': spot.id,
+                    'available': isAvailable
+                }
+                socketio.emit('spot_update', message, room=sid)
+            # If times overlap, send the update
+            elif (conn_start and conn_end and
+                  not (conn_end <= start_time or conn_start >= end_time)):
+                message = {
+                    'spotId': spot.id,
+                    'available': isAvailable,
+                    'start_time': start_time.strftime("%H:%M"),
+                    'end_time': end_time.strftime("%H:%M")
+                }
+                socketio.emit('spot_time_update', message, room=sid)
+
+        current_app.logger.debug(f"Emitted spot updates to relevant connections in {target_room}")
+
+        if return_confirmation:
             return True
-
         return None
     except Exception as e:
-        print(f"Error in emit_to_relevant_rooms_about_booking: {str(e)}")
         current_app.logger.error(f"Error in emit_to_relevant_rooms_about_booking: {str(e)}")
         return False
 
@@ -307,7 +326,7 @@ def book_spot(data):
 
         db.session.commit()
 
-        ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True)
+        ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True, start_time, end_time)
         print("EMITTED ", ok)
 
         checkout_url = create_stripe_session(data, start_time_str, end_time_str, spot, hold_until)
@@ -396,15 +415,23 @@ def release_spot_if_unpaid(spot_id, bookingDate):
 def handle_join(data):
     parkingLotId = data.get('parkingLotId')
     bookingDate = data.get('bookingDate')
+    startTime = data.get('startTime')  # Add these parameters
+    endTime = data.get('endTime')  # from the client
 
     if not parkingLotId or not bookingDate:
         return
 
     room_name = f"lot_{parkingLotId}_{bookingDate}"
 
-    # Check if already in room
-    rooms = socketio.server.rooms(request.sid)
-    if room_name not in rooms:
+    # Store time range with the connection
+    active_connections[request.sid] = {
+        'parkingLotId': parkingLotId,
+        'bookingDate': bookingDate,
+        'startTime': startTime,
+        'endTime': endTime
+    }
+
+    if room_name not in socketio.server.rooms(request.sid):
         join_room(room_name)
         active_rooms[room_name].add(request.sid)
         print(f'User joined room: {room_name}')
