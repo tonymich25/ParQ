@@ -304,10 +304,9 @@ body {
 }
 
 .parking-spot-rect.selected {
-    stroke: var(--primary-color);
-    stroke-width: 5;
-    stroke-opacity: 1;
-    fill-opacity: 0.8;
+    fill: #3498db; /* Blue for selected */
+    stroke: #2980b9;
+    stroke-width: 2px;
     animation: pulse 1.5s infinite;
 }
 
