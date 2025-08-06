@@ -103,6 +103,18 @@ def payment_success():
                 flash("Spot taken during payment. Refund issued.", "error")
                 return redirect(url_for('booking_bp.booking_form'))
 
+
+            if session.metadata.get('hold_until') > datetime.now(ZoneInfo("Europe/Nicosia")):
+                stripe.Refund.create(payment_intent=session.payment_intent)
+                emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
+
+                if spot.id in spot_holds:
+                    del spot_holds[spot.id]
+
+                flash("Spot taken during payment. Refund issued.", "error")
+                return redirect(url_for('booking_bp.booking_form'))
+
+
         if spot.id in spot_holds:
             del spot_holds[spot.id]
 
@@ -221,7 +233,7 @@ def calculate_price(startTime, endTime, spotPricePerHour):
     return max(price_cents, 50)  # Ensure minimum charge of 50 cents
 
 
-def create_stripe_session(data, startTimeStr, endTimeStr, spot):
+def create_stripe_session(data, startTimeStr, endTimeStr, spot, hold_until):
     try:
         # Convert strings to datetime objects for price calculation
         start_time = datetime.strptime(startTimeStr, "%H:%M").time()
@@ -252,7 +264,8 @@ def create_stripe_session(data, startTimeStr, endTimeStr, spot):
                 'parking_lot_id': data.get('parkingLotId'),
                 'booking_date': data.get('bookingDate'),
                 'start_time': startTimeStr,
-                'end_time': endTimeStr
+                'end_time': endTimeStr,
+                'hold_until': hold_until
             }
         )
         return checkout_session.url
@@ -287,7 +300,9 @@ def book_spot(data):
             'held_until': hold_until,
             'user_id': current_user.get_id(),
             'parking_lot_id': data.get('parkingLotId'),
-            'booking_date': data.get('bookingDate')
+            'booking_date': data.get('bookingDate'),
+            'start_time': start_time_str,
+            'end_time': end_time_str
         }
 
         db.session.commit()
@@ -295,7 +310,7 @@ def book_spot(data):
         ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True)
         print("EMITTED ", ok)
 
-        checkout_url = create_stripe_session(data, start_time_str, end_time_str, spot)
+        checkout_url = create_stripe_session(data, start_time_str, end_time_str, spot, hold_until)
         if not checkout_url:
             emit('booking_failed', {'reason': 'Payment system error'})
             emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, False)
@@ -332,7 +347,12 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
     if spot.id in spot_holds:
         hold_data = spot_holds[spot.id]
         if hold_data['held_until'] > now:
-            return 1  # Spot is held (not available)
+            held_start = datetime.strptime(hold_data['start_time'], "%H:%M").time()
+            held_end = datetime.strptime(hold_data['end_time'], "%H:%M").time()
+
+            # If the dates are the same and times overlap, spot is not available
+            if hold_data['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
+                return 1  # Spot is held (not available) for overlapping time
 
         # Check existing bookings
     return Booking.query.filter(
@@ -410,13 +430,14 @@ def check_spot_availability():
         now = datetime.now(ZoneInfo("Europe/Nicosia"))
         allSpots = parkingLot.spots
         # Get all active holds for this parking lot and date
-        active_holds = {
-            spot_id: hold
-            for spot_id, hold in spot_holds.items()
-            if (hold['held_until'] > now and
-                hold.get('parking_lot_id') == parkingLotId and
-                hold.get('booking_date') == bookingDate)
-        }
+        active_holds = {}
+        for spot_id, hold in spot_holds.items():
+            if hold['held_until'] > now and hold.get('parking_lot_id') == parkingLotId:
+                # Check if the hold is for the same date and times overlap
+                held_start = datetime.strptime(hold['start_time'], "%H:%M").time()
+                held_end = datetime.strptime(hold['end_time'], "%H:%M").time()
+                if hold['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
+                    active_holds[spot_id] = hold
 
         # Get conflicting bookings
         conflicting_bookings = Booking.query.filter(

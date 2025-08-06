@@ -211,18 +211,6 @@ function parkingLotSelected() {
     updateSpotSummary();
 }
 
-// async function waitForBookingDate
-//
-// document.addEventListener("DOMContentLoaded", function () {
-//     const bookingDateInput = document.getElementById("bookingDate");
-//
-//     bookingDateInput.addEventListener("change", function (e) {
-//         console.log("Date changed to:", e.target.value);
-//
-//
-//
-//     });
-// });
 
 // WebSocket connection - minimal fixes
 let socket = null;
@@ -438,7 +426,7 @@ function handleSpotClick(spotId) {
         const endMinute = document.querySelector('[name="endMinute"]').value;
 
         // Calculate price (you might want to adjust this based on your pricing logic)
-        const pricePerHour = 5; // Default or fetch actual price
+        const pricePerHour = 2; // Default or fetch actual price
         const hours = (parseInt(endHour) - parseInt(startHour)) +
                      (parseInt(endMinute) - parseInt(startMinute)) / 60;
         const totalPrice = (pricePerHour * hours).toFixed(2);
