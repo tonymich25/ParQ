@@ -22,11 +22,39 @@ document.addEventListener("DOMContentLoaded", function () {
         onChange: function (selectedDates, dateStr, instance) {
             document.getElementById("summary-date").textContent = dateStr;
             checkTimeValidity();
+            console.log('Date picked')
             openWebSocketConnection(document.getElementById('parking-lot-select').value);
             updateStepIndicator();
             updateSpotSummary();
         }
     });
+
+    // Get selects for start time
+    const startHourSelect = document.querySelector('select[name="startHour"]');
+    const startMinuteSelect = document.querySelector('select[name="startMinute"]');
+    // Get selects for end time
+    const endHourSelect = document.querySelector('select[name="endHour"]');
+    const endMinuteSelect = document.querySelector('select[name="endMinute"]');
+
+
+    function onTimeChange() {
+        const startTime = startHourSelect.value + ':' + startMinuteSelect.value;
+        const endTime = endHourSelect.value + ':' + endMinuteSelect.value;
+
+        console.log("Time changed:", startTime, endTime);
+        checkTimeValidity();
+        openWebSocketConnection(document.getElementById('parking-lot-select').value);
+        updateStepIndicator();
+        updateSpotSummary();
+
+        document.getElementById('summary-time').textContent = startTime + ' - ' + endTime;
+    }
+
+    startHourSelect.addEventListener('change', onTimeChange);
+    startMinuteSelect.addEventListener('change', onTimeChange);
+    endHourSelect.addEventListener('change', onTimeChange);
+    endMinuteSelect.addEventListener('change', onTimeChange);
+
 
     map.on("load", function () {
         addCityMarkers();
@@ -221,9 +249,11 @@ function openWebSocketConnection(parkingLotId) {
                      document.querySelector('[name="startMinute"]').value;
     const endTime = document.querySelector('[name="endHour"]').value + ":" +
                    document.querySelector('[name="endMinute"]').value;
+
     if (!bookingDate || !parkingLotId) return;
-    // Only reconnect if necessary
+
     if (socket && socket.connected) {
+        // Update subscription with current times
         socket.emit('subscribe', {
             parkingLotId: parkingLotId,
             bookingDate: bookingDate,
@@ -236,42 +266,18 @@ function openWebSocketConnection(parkingLotId) {
     socket = io('http://127.0.0.1:5000');
 
     socket.on('connect', () => {
-        const bookingDate = document.getElementById("bookingDate").value;
-        const startTime = document.querySelector('[name="startHour"]').value + ":" +
-                         document.querySelector('[name="startMinute"]').value;
-        const endTime = document.querySelector('[name="endHour"]').value + ":" +
-                       document.querySelector('[name="endMinute"]').value;
-
-
-         if (!bookingDate || !startTime || !endTime) {
-            console.error("Missing required booking information");
-            return;
-        }
-        console.log('Going to subscribe')
+        console.log('WebSocket connected, subscribing...');
         socket.emit('subscribe', {
-            type: 'subscribe',
             parkingLotId: parkingLotId,
             bookingDate: bookingDate,
         });
     });
 
-
-    socket.on('connect_error', (err) => {
-        console.error('Socket connection error:', err);
-        setTimeout(() => openWebSocketConnection(parkingLotId), 1000);
-    });
-
-
-    // Keep your existing message handlers
     socket.on('spot_update', (data) => {
         console.log('Spot update received:', data);
         updateSpotAvailability(data.spotId, data.available);
     });
 
-    socket.on('batch_update', (data) => {
-        console.log('Batch update received:', data);
-        renderParkingSpots(data);
-    });
 
     socket.on('payment_redirect', (data) => {
         window.location.href = data.url;
