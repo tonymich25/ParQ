@@ -5,7 +5,7 @@ from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 import qrcode
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, leave_room
 import stripe
 from cryptography.fernet import Fernet
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
@@ -93,7 +93,7 @@ def payment_success():
         with db.session.begin_nested():
             if is_spot_available(spot, session.metadata['parking_lot_id'],
                                  booking_date, start_time, end_time) > 0:
-                # Spot taken → Refund
+                # Spot taken -> Refund
                 stripe.Refund.create(payment_intent=session.payment_intent)
                 emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
 
@@ -171,53 +171,59 @@ def disconnect_user(session):
                     sids.remove(sid)
 
 
-def emit_to_relevant_rooms_about_booking(spot, bookingDate, isAvailable, return_confirmation, start_time=None,
-                                         end_time=None):
+def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, return_confirmation, start_time=None, end_time=None):
     try:
-        target_room = f"lot_{spot.parkingLotId}_{bookingDate}"
+        target_room = f"lot_{spot.parkingLotId}_{booking_date}"
+        print(f"\n=== Starting emission to {target_room} ===")
+        print(f"Spot: {spot.id} | Available: {is_available} | Time Range: {start_time}-{end_time}")
 
         if target_room not in active_rooms:
+            print(f"Room {target_room} not found")
             return False if return_confirmation else None
 
-        # Get all connections in the room
-        sids = active_rooms[target_room]
+        # Convert input times
+        if isinstance(start_time, str) and start_time:
+            start_time = datetime.strptime(start_time, "%H:%M").time()
+        if isinstance(end_time, str) and end_time:
+            end_time = datetime.strptime(end_time, "%H:%M").time()
 
-        for sid in list(sids):
+        recipients = 0
+        for sid in list(active_rooms[target_room]):
             conn_data = active_connections.get(sid)
             if not conn_data:
+                print(f"Missing connection data for {sid}")
                 continue
 
-            # Check if this connection's time range overlaps with the update
-            conn_start = datetime.strptime(conn_data['startTime'], "%H:%M").time() if conn_data['startTime'] else None
-            conn_end = datetime.strptime(conn_data['endTime'], "%H:%M").time() if conn_data['endTime'] else None
+            # Get client's time range with validation
+            try:
+                conn_start = datetime.strptime(conn_data['startTime'], "%H:%M").time() if conn_data['startTime'] else None
+                conn_end = datetime.strptime(conn_data['endTime'], "%H:%M").time() if conn_data['endTime'] else None
+            except ValueError as e:
+                print(f"Invalid time format for {sid}: {e}")
+                continue
 
-            # If no specific times in update, send to everyone
-            if not start_time or not end_time:
-                message = {
+            # Determine if we should send the update
+            send_update = True
+            if start_time and end_time and conn_start and conn_end:
+                # Check for time overlap
+                time_overlap = not (conn_end <= start_time or conn_start >= end_time)
+                send_update = time_overlap
+                print(f"Client {sid} | Times: {conn_data['startTime']}-{conn_data['endTime']} | Overlap: {time_overlap}")
+
+            if send_update:
+                socketio.emit('spot_update', {
                     'spotId': spot.id,
-                    'available': isAvailable
-                }
-                socketio.emit('spot_update', message, room=sid)
-            # If times overlap, send the update
-            elif (conn_start and conn_end and
-                  not (conn_end <= start_time or conn_start >= end_time)):
-                message = {
-                    'spotId': spot.id,
-                    'available': isAvailable,
-                    'start_time': start_time.strftime("%H:%M"),
-                    'end_time': end_time.strftime("%H:%M")
-                }
-                socketio.emit('spot_time_update', message, room=sid)
+                    'available': is_available,
+                    'timestamp': datetime.now(ZoneInfo("Europe/Nicosia")).isoformat()
+                }, room=sid)
+                recipients += 1
 
-        current_app.logger.debug(f"Emitted spot updates to relevant connections in {target_room}")
+        print(f"=== Emission complete === Recipients: {recipients}\n")
+        return True
 
-        if return_confirmation:
-            return True
-        return None
     except Exception as e:
-        current_app.logger.error(f"Error in emit_to_relevant_rooms_about_booking: {str(e)}")
+        print(f"Emission error: {str(e)}")
         return False
-
 
 @socketio.on('connect')
 def handle_connect():
@@ -227,13 +233,23 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    # TODO: ON DISCONNECT NEED TO EMIT BACK ANYTHING THAT USER WAS HOLDING0
+    sid = request.sid
+    print(f"\nClient disconnecting: {sid}")
 
-    #ok = emit_to_relevant_rooms_about_booking(spotid, bookingDate, False, True)
-    #print("Un-blocked spot on disconnect: ", ok)
+    # Clean up from all rooms
+    for room_name in list(socketio.server.rooms(sid)):
+        if room_name.startswith('lot_'):
+            if room_name in active_rooms:
+                active_rooms[room_name].discard(sid)
+                if not active_rooms[room_name]:
+                    del active_rooms[room_name]
+            print(f"Removed from room: {room_name}")
 
-    print("Client disconnected: " + request.sid)
-    active_connections.pop(request.sid, None)
+    # Clean up connection data
+    if sid in active_connections:
+        del active_connections[sid]
+
+    print(f"Disconnect complete for {sid}\n")
 
 
 
@@ -412,29 +428,51 @@ def release_spot_if_unpaid(spot_id, bookingDate):
 
 
 @socketio.on('subscribe')
-def handle_join(data):
-    parkingLotId = data.get('parkingLotId')
-    bookingDate = data.get('bookingDate')
-    startTime = data.get('startTime')  # Add these parameters
-    endTime = data.get('endTime')  # from the client
+def handle_subscribe(data):
+    try:
+        parking_lot_id = data.get('parkingLotId')
+        booking_date = data.get('bookingDate')
+        start_time = data.get('startTime')
+        end_time = data.get('endTime')
 
-    if not parkingLotId or not bookingDate:
-        return
+        if not parking_lot_id or not booking_date:
+            print("Invalid subscription: missing required fields")
+            return
 
-    room_name = f"lot_{parkingLotId}_{bookingDate}"
+        new_room_name = f"lot_{parking_lot_id}_{booking_date}"
 
-    # Store time range with the connection
-    active_connections[request.sid] = {
-        'parkingLotId': parkingLotId,
-        'bookingDate': bookingDate,
-        'startTime': startTime,
-        'endTime': endTime
-    }
+        current_lot_rooms = [room for room in socketio.server.rooms(request.sid) if room.startswith('lot_')]
 
-    if room_name not in socketio.server.rooms(request.sid):
-        join_room(room_name)
-        active_rooms[room_name].add(request.sid)
-        print(f'User joined room: {room_name}')
+        if new_room_name in current_lot_rooms:
+            # Same room: just update time range
+            active_connections[request.sid].update({
+                'startTime': start_time,
+                'endTime': end_time
+            })
+            print(f"Client {request.sid} updated time range in existing room {new_room_name} ({start_time}-{end_time})")
+        else:
+            # Leave old lot rooms
+            for room in current_lot_rooms:
+                leave_room(room)
+                active_rooms[room].discard(request.sid)
+                if not active_rooms[room]:
+                    del active_rooms[room]
+
+            # Join new room
+            join_room(new_room_name)
+            active_rooms.setdefault(new_room_name, set()).add(request.sid)
+
+            # Update connection info without lastActive
+            active_connections[request.sid] = {
+                'parkingLotId': parking_lot_id,
+                'bookingDate': booking_date,
+                'startTime': start_time,
+                'endTime': end_time
+            }
+            print(f"Client {request.sid} subscribed to new room {new_room_name} ({start_time}-{end_time})")
+
+    except Exception as e:
+        print(f"Subscription error for {request.sid}: {str(e)}")
 
 
 @booking_bp.route('/check_spot_availability', methods=['POST'])
