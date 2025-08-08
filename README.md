@@ -1,3 +1,9 @@
+# ⚠ License Notice
+### This project is provided for viewing as part of my personal portfolio. 
+### Use, reproduction, modification, or distribution of any part of this code without 
+### explicit written permission is prohibited.
+
+
 # How to run application
 1. Use python 3.9 and download all packages form requirements.txt
 2. Run app.py
