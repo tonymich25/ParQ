@@ -1,12 +1,12 @@
-from datetime import datetime, time, timedelta
+
 import os
 import threading
+import qrcode
+import stripe
 from collections import defaultdict
 from zoneinfo import ZoneInfo
-
-import qrcode
-from flask_socketio import SocketIO, leave_room
-import stripe
+from datetime import datetime, time, timedelta
+from flask_socketio import leave_room
 from cryptography.fernet import Fernet
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
@@ -62,6 +62,7 @@ def create_booking(session, spot):
 
 @booking_bp.route('/payment_success', methods=['GET'])
 def payment_success():
+
     session_id = request.args.get('session_id')
 
     if not session_id:
@@ -91,8 +92,16 @@ def payment_success():
 
 
         with db.session.begin_nested():
+
+            if spot.id not in spot_holds or spot_holds[spot.id]['user_id'] != current_user.id:
+                flash("Booking session expired. Please try again.", "error")
+                return redirect(url_for('booking_bp.booking_form'))
+
+            start_time_obj = datetime.strptime(start_time, '%H:%M').time()
+            end_time_obj = datetime.strptime(end_time, '%H:%M').time()
+
             if is_spot_available(spot, session.metadata['parking_lot_id'],
-                                 booking_date, start_time, end_time) > 0:
+                                 booking_date, start_time_obj, end_time_obj) > 0:
                 # Spot taken -> Refund
                 stripe.Refund.create(payment_intent=session.payment_intent)
                 emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
@@ -103,15 +112,15 @@ def payment_success():
                 flash("Spot taken during payment. Refund issued.", "error")
                 return redirect(url_for('booking_bp.booking_form'))
 
-
-            if session.metadata.get('hold_until') > datetime.now(ZoneInfo("Europe/Nicosia")):
+            hold_until = datetime.fromtimestamp(float(session.metadata['hold_until']),tz=ZoneInfo("Europe/Nicosia"))
+            if hold_until <= datetime.now(ZoneInfo("Europe/Nicosia")):
                 stripe.Refund.create(payment_intent=session.payment_intent)
                 emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
 
                 if spot.id in spot_holds:
                     del spot_holds[spot.id]
 
-                flash("Spot taken during payment. Refund issued.", "error")
+                flash("Spot holding time passed. Refund issued.", "error")
                 return redirect(url_for('booking_bp.booking_form'))
 
 
@@ -142,13 +151,20 @@ def payment_success():
         flash("Payment processing error. Please contact support.", "error")
         return redirect(url_for('booking_bp.booking_form'))
     except Exception as e:
-        emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
-        spot.heldBy = None
-        spot.heldUntil = None
-        current_app.logger.error(f"Unexpected error: {str(e)}")
-        flash("Error processing your booking. Please contact support.", "error")
-        return redirect(url_for('booking_bp.booking_form'))
+            # Safely release resources without assuming variables exist
+        spot_id = session.metadata.get('spot_id') if session else None
+        booking_date = session.metadata.get('booking_date') if session else None
 
+        if spot_id:
+            spot = ParkingSpot.query.get(spot_id)
+        if spot:  # Only emit if spot exists
+            emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
+        if spot_id in spot_holds:  # Cleanup in-memory hold
+            del spot_holds[spot_id]
+
+        current_app.logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        flash("Payment received! If your booking doesn’t appear, contact support.", "warning")
+        return redirect(url_for('dashboard.dashboard'))  # Avoid booking loop
 
 def generate_qr_code(new_booking_id):
     key = os.getenv("FERNET_KEY")
@@ -332,7 +348,7 @@ def book_spot(data):
 
         hold_until = datetime.now(ZoneInfo("Europe/Nicosia")) + timedelta(seconds=240)
         spot_holds[spot.id] = {
-            'held_until': hold_until,
+            'held_until': hold_until.timestamp(),
             'user_id': current_user.get_id(),
             'parking_lot_id': data.get('parkingLotId'),
             'booking_date': data.get('bookingDate'),
@@ -378,16 +394,21 @@ def book_spot(data):
 
 
 def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
-    now = datetime.now(ZoneInfo("Europe/Nicosia"))
     if spot.id in spot_holds:
         hold_data = spot_holds[spot.id]
-        if hold_data['held_until'] > now:
+
+        held_until = datetime.fromtimestamp(float(hold_data['held_until']), tz=ZoneInfo("Europe/Nicosia"))
+
+        if held_until > datetime.now(ZoneInfo("Europe/Nicosia")):
             held_start = datetime.strptime(hold_data['start_time'], "%H:%M").time()
             held_end = datetime.strptime(hold_data['end_time'], "%H:%M").time()
+            # If current user overlaps , consider spot available
+            if hold_data['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
 
             # If the dates are the same and times overlap, spot is not available
-            if hold_data['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
-                return 1  # Spot is held (not available) for overlapping time
+                if hold_data['user_id'] == current_user.id:
+                    return 0  # Spot is held (not available) for overlapping time
+                return 1
 
         # Check existing bookings
     return Booking.query.filter(
@@ -421,10 +442,6 @@ def release_spot_if_unpaid(spot_id, bookingDate):
         except Exception as e:
             print(f"Error in release_spot_if_unpaid: {str(e)}")
             current_app.logger.error(f"Error releasing spot {spot_id}: {str(e)}")
-
-
-#@socketio.on('get_spots_availability')
-#def get_spots_availability(data):
 
 
 @socketio.on('subscribe')
@@ -497,7 +514,10 @@ def check_spot_availability():
         # Get all active holds for this parking lot and date
         active_holds = {}
         for spot_id, hold in spot_holds.items():
-            if hold['held_until'] > now and hold.get('parking_lot_id') == parkingLotId:
+            held_until = hold['held_until']
+            if isinstance(held_until, float):
+                held_until = datetime.fromtimestamp(held_until, ZoneInfo("Europe/Nicosia"))
+            if held_until > now and hold.get('parking_lot_id') == parkingLotId:
                 # Check if the hold is for the same date and times overlap
                 held_start = datetime.strptime(hold['start_time'], "%H:%M").time()
                 held_end = datetime.strptime(hold['end_time'], "%H:%M").time()
