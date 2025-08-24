@@ -1,4 +1,3 @@
-// Mapbox initialization (unchanged)
 mapboxgl.accessToken = "pk.eyJ1IjoiYWJjZDEyMzQtLSIsImEiOiJjbWNiMGVkdGswODMyMmpzYWVxeXd0OHF2In0.U95wJcVAPpjsoQiRvnXe4Q";
 const map = new mapboxgl.Map({
     container: "map",
@@ -14,7 +13,6 @@ map.addControl(new mapboxgl.GeolocateControl({
     },
 }));
 
-// DOM Content Loaded (unchanged)
 document.addEventListener("DOMContentLoaded", function () {
     flatpickr("#bookingDate", {
         minDate: "today",
@@ -29,10 +27,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // Get selects for start time
     const startHourSelect = document.querySelector('select[name="startHour"]');
     const startMinuteSelect = document.querySelector('select[name="startMinute"]');
-    // Get selects for end time
     const endHourSelect = document.querySelector('select[name="endHour"]');
     const endMinuteSelect = document.querySelector('select[name="endMinute"]');
 
@@ -61,7 +57,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 });
 
-// Your existing marker functions (unchanged)
 let cityMarkers = [];
 let parkingLotMarkers = [];
 
@@ -75,7 +70,6 @@ function clearCityMarkers() {
     cityMarkers = [];
 }
 
-// Your existing addCityMarkers function (unchanged)
 function addCityMarkers() {
     clearCityMarkers();
     const cityOptions = document.getElementById("city-select").options;
@@ -96,7 +90,6 @@ function addCityMarkers() {
     }
 }
 
-// Your existing update functions (unchanged)
 function updateStepIndicator() {
     const steps = document.querySelectorAll(".step");
     const citySelected = document.getElementById("city-select").value !== "";
@@ -120,7 +113,6 @@ function updateStepIndicator() {
     });
 }
 
-// Your existing checkTimeValidity (unchanged)
 function checkTimeValidity() {
     const bookingDate = document.getElementById("bookingDate").value;
     const startMinute = parseInt(document.querySelector('[name="startMinute"]').value);
@@ -160,7 +152,6 @@ function checkTimeValidity() {
     updateSpotSummary();
 }
 
-// Your existing cityChanged (unchanged)
 function cityChanged(selectElement) {
     clearParkingLotMarkers();
     clearCityMarkers();
@@ -204,7 +195,6 @@ function cityChanged(selectElement) {
         });
 }
 
-// Your existing parkingLotSelected with fixed WebSocket initialization
 function parkingLotSelected() {
     const select = document.getElementById("parking-lot-select");
     const selectedOption = select.options[select.selectedIndex];
@@ -240,7 +230,6 @@ function parkingLotSelected() {
 }
 
 
-// WebSocket connection - minimal fixes
 let socket = null;
 
 function openWebSocketConnection(parkingLotId) {
@@ -253,7 +242,6 @@ function openWebSocketConnection(parkingLotId) {
     if (!bookingDate || !parkingLotId) return;
 
     if (socket && socket.connected) {
-        // Update subscription with current times
         socket.emit('subscribe', {
             parkingLotId: parkingLotId,
             bookingDate: bookingDate,
@@ -298,7 +286,6 @@ function updateSpotAvailability(spotId, isAvailable) {
         return;
     }
 
-    // Remove all state classes
     spotElement.classList.remove('available', 'taken', 'selected');
 
     if (isAvailable) {
@@ -306,7 +293,6 @@ function updateSpotAvailability(spotId, isAvailable) {
         spotElement.style.cursor = 'pointer';
         spotElement.style.pointerEvents = 'auto';
 
-        // Completely replace the onclick handler
         spotElement.onclick = null;
         spotElement.onclick = function() {
             handleSpotClick(spotId);
@@ -318,7 +304,6 @@ function updateSpotAvailability(spotId, isAvailable) {
         spotElement.onclick = null;
     }
 
-    // If this was selected spot, clear selection
     if (!isAvailable && document.getElementById("selected-spot-id").value === String(spotId)) {
         document.getElementById("selected-spot-id").value = "";
         document.getElementById("submit-button").disabled = true;
@@ -328,7 +313,6 @@ function updateSpotAvailability(spotId, isAvailable) {
     console.log(`Spot ${spotId} UI updated successfully`);
 }
 
-// Your existing fetchSpotStatus (unchanged)
 function fetchSpotStatus() {
     const parkingLotId = document.getElementById("parking-lot-select").value;
     const bookingDate = document.getElementById("bookingDate").value;
@@ -369,7 +353,6 @@ function fetchSpotStatus() {
         });
 }
 
-// Your existing renderParkingSpots (unchanged)
 function renderParkingSpots(data) {
     const parkingImage = document.getElementById("parking-image");
     const spotRectsGroup = document.getElementById("spot-rects-group");
@@ -396,7 +379,6 @@ function renderParkingSpots(data) {
         rect.classList.toggle("taken", !spot.is_available);
 
         if (spot.is_available) {
-            // Use direct onclick assignment for SVG elements
             rect.onclick = function() {
                 handleSpotClick(spot.id);
             };
@@ -424,20 +406,17 @@ function handleSpotClick(spotId) {
     }
 
     if (currentSelectedId !== String(spotId)) {
-        // Select the new spot
         document.getElementById("selected-spot-id").value = spotId;
         spotElement.classList.add("selected");
         document.getElementById("submit-button").disabled = false;
         document.getElementById("spot-summary").style.display = "block";
 
-        // Get the price from the data attribute or fetch it
         const startHour = document.querySelector('[name="startHour"]').value;
         const startMinute = document.querySelector('[name="startMinute"]').value;
         const endHour = document.querySelector('[name="endHour"]').value;
         const endMinute = document.querySelector('[name="endMinute"]').value;
 
-        // Calculate price (you might want to adjust this based on your pricing logic)
-        const pricePerHour = 2; // Default or fetch actual price
+        const pricePerHour = 2;
         const hours = (parseInt(endHour) - parseInt(startHour)) +
                      (parseInt(endMinute) - parseInt(startMinute)) / 60;
         const totalPrice = (pricePerHour * hours).toFixed(2);
@@ -445,7 +424,6 @@ function handleSpotClick(spotId) {
         document.getElementById("summary-spot").textContent = `Spot #${spotId}`;
         document.getElementById("summary-price").textContent = `€${totalPrice}`;
     } else {
-        // Deselect if clicking the same spot
         document.getElementById("selected-spot-id").value = "";
         document.getElementById("submit-button").disabled = true;
         document.getElementById("spot-summary").style.display = "none";
@@ -457,7 +435,6 @@ function handleSpotClick(spotId) {
 }
 
 
-// Your existing updateSpotSummary (unchanged)
 function updateSpotSummary() {
     const spotId = document.getElementById("selected-spot-id").value;
     if (spotId) {
@@ -467,7 +444,6 @@ function updateSpotSummary() {
     }
 }
 
-// Your existing zoomToCity (unchanged)
 function zoomToCity(cityName) {
     if (!cityName) return;
 
@@ -484,10 +460,6 @@ function zoomToCity(cityName) {
 }
 
 
-
-
-
-// Fixed form submission handler
 document.getElementById("booking-form").addEventListener("submit", function (e) {
     e.preventDefault();
 
@@ -521,7 +493,6 @@ document.getElementById("booking-form").addEventListener("submit", function (e) 
     }
 });
 
-// Your existing AI messages (unchanged)
 const aiMessages = [
     "Most bookings for this location happen at around 9:30 AM daily",
     "By 11 AM 94% of spaces are booked in advance for this area",
