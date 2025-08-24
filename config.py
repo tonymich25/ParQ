@@ -1,8 +1,7 @@
-from datetime import datetime
 import os
 import stripe
 from dotenv import load_dotenv
-from flask import Flask, url_for
+from flask import Flask, url_for, render_template
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.menu import MenuLink
@@ -30,12 +29,12 @@ login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "warning"
 
 
+# STRIPE Init
 STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 stripe.api_key = STRIPE_SECRET_KEY
 
-# TODO Once deployed use actual link
-socketio = SocketIO(app, cors_allowed_origins=["http://localhost"])
+socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -55,6 +54,14 @@ metadata = MetaData(
 db = SQLAlchemy(app, metadata=metadata)
 migrate = Migrate(app, db)
 
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 class User(db.Model, UserMixin):
     __tablename__ = 'users'

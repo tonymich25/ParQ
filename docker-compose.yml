@@ -1,28 +1,75 @@
-services:
-  db:
-    image: postgres:14.5-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: Tony2508
-      POSTGRES_DB: ParQ
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+version: '3.8'
 
-  app:
-    build: .
-    ports:
-      - "5000:5000"
-    depends_on:
-      db:
-        condition: service_healthy
+services:
+  flask:
+    build: ./app/Car-Project
+    container_name: parking_flask
+    env_file: .env
     environment:
-      SQLALCHEMY_DATABASE_URI: postgresql://postgres:Tony2508@db:5432/ParQ
-      FLASK_APP: app.py
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+      - PYTHONPATH=/app/Car-Project
+    volumes:
+      - ./app/Car-Project:/app/Car-Project
+    working_dir: /app/Car-Project
+    expose:
+      - "5000"
+    restart: unless-stopped
+    depends_on:
+      - db
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    container_name: parking_db
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: parking_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl_options.conf:/etc/nginx/ssl_options.conf:ro
+      - ./certbot/www:/var/www/certbot
+      - /home/deploy/data/certbot/conf:/etc/letsencrypt
+      - ./app/Car-Project/static:/var/www/static:ro
+    depends_on:
+      - flask
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    container_name: parking_certbot
+#    ports:
+#      - "80:80"
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - app_network
 
 volumes:
-  db-data:
+  postgres_data:
+
+networks:
+  app_network:
+    driver: bridge

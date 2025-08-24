@@ -15,9 +15,6 @@ app.register_error_handler(502, errors.bad_gateway)
 app.register_error_handler(503, errors.service_unavailable)
 app.register_error_handler(504, errors.gateway_timeout)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
 
 if __name__ == '__main__':
     if os.environ.get('FLASK_ENV') == 'development':
