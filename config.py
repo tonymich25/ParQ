@@ -35,7 +35,7 @@ STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 stripe.api_key = STRIPE_SECRET_KEY
 
-socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')

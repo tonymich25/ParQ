@@ -1,11 +1,10 @@
-
 import os
 import threading
 import qrcode
 import stripe
 from collections import defaultdict
 from zoneinfo import ZoneInfo
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from flask_socketio import leave_room
 from cryptography.fernet import Fernet
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
@@ -442,6 +441,10 @@ def release_spot_if_unpaid(spot_id, bookingDate):
         except Exception as e:
             print(f"Error in release_spot_if_unpaid: {str(e)}")
             current_app.logger.error(f"Error releasing spot {spot_id}: {str(e)}")
+
+
+#@socketio.on('get_spots_availability')
+#def get_spots_availability(data):
 
 
 @socketio.on('subscribe')
