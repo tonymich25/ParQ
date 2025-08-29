@@ -1,6 +1,7 @@
+from datetime import datetime
 import os
 import stripe
-from datetime import datetime
+import redis
 from dotenv import load_dotenv
 from flask import Flask, url_for, render_template
 from flask_admin import Admin
@@ -35,7 +36,18 @@ STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 stripe.api_key = STRIPE_SECRET_KEY
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+# TODO Once deployed use actual link (For droplet without redis)
+#socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
+
+app.config['REDIS_URL'] = os.getenv("REDIS_URL")
+redis_client = redis.from_url(app.config['REDIS_URL'])
+socketio = SocketIO(
+        app,
+        cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"],
+        async_mode='eventlet',
+        message_queue=app.config['REDIS_URL'],
+        manage_session=False
+)
 
 # DATABASE CONFIGURATION
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
@@ -59,6 +71,7 @@ migrate = Migrate(app, db)
 @app.route('/health')
 def health():
     return "OK", 200
+
 
 @app.route('/')
 def index():
