@@ -1,8 +1,8 @@
-from datetime import datetime
 import os
 import stripe
 import redis
-from dotenv import load_dotenv
+from datetime import datetime
+from infisical_sdk import InfisicalSDKClient
 from flask import Flask, url_for, render_template
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
@@ -16,12 +16,20 @@ from sqlalchemy import MetaData
 app = Flask(__name__)
 
 # LOAD .ENV FILE
-load_dotenv()
+client = InfisicalSDKClient(
+        host="https://app.infisical.com",
+        token=os.environ.get("INFISICAL_TOKEN"))
+secrets_response = client.secrets.list_secrets(
+    project_id="INSERT_PROJECT_ID",
+    environment_slug="dev",
+    secret_path="/"
+)
+secrets = {secret.secretKey: secret.secretValue for secret in secrets_response.secrets}
 
 # SECRET KEY FOR FLASK FORMS
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-app.config['RECAPTCHA_PRIVATE_KEY'] = os.getenv('RECAPTCHA_PRIVATE_KEY')
-app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
+app.config['SECRET_KEY'] = secrets['SECRET_KEY']
+app.config['RECAPTCHA_PRIVATE_KEY'] = secrets['RECAPTCHA_PRIVATE_KEY']
+app.config['RECAPTCHA_PUBLIC_KEY'] = secrets['RECAPTCHA_PUBLIC_KEY']
 
 # Initialising Login Manager
 login_manager = LoginManager()
@@ -31,15 +39,16 @@ login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "warning"
 
 
-# STRIPE Init
-STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
-STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
+
+# STRIPE INIT
+STRIPE_PUBLIC_KEY = secrets['STRIPE_PUBLIC_KEY']
+STRIPE_SECRET_KEY = secrets['STRIPE_SECRET_KEY']
 stripe.api_key = STRIPE_SECRET_KEY
 
-# TODO Once deployed use actual link (For droplet without redis)
+# TODO Once deployed use actual link
 #socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
 
-app.config['REDIS_URL'] = os.getenv("REDIS_URL")
+app.config['REDIS_URL'] = secrets['REDIS_URL']
 redis_client = redis.from_url(app.config['REDIS_URL'])
 socketio = SocketIO(
         app,
@@ -50,9 +59,9 @@ socketio = SocketIO(
 )
 
 # DATABASE CONFIGURATION
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
-app.config['SQLALCHEMY_ECHO'] = True if os.getenv('SQLALCHEMY_ECHO') == 'True' else False
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True if os.getenv('SQLALCHEMY_TRACK_MODIFICATIONS') == 'True' else False
+app.config['SQLALCHEMY_DATABASE_URI'] = secrets['SQLALCHEMY_DATABASE_URI']
+app.config['SQLALCHEMY_ECHO'] = True if secrets['SQLALCHEMY_ECHO'] == 'True' else False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True if secrets['SQLALCHEMY_TRACK_MODIFICATIONS'] == 'True' else False
 
 metadata = MetaData(
     naming_convention={
@@ -202,14 +211,14 @@ class BookingView(ExtendedModelView):
     column_display_pk = True
     column_hide_backrefs = False
     column_list = ('id', 'userid', 'parking_lot_id', 'spot_id', 'timeBooked', 'bookingDate', 'startTime', 'endTime', 'amount', 'spot_id')
-    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if secrets['FLASK_ADMIN_FLUID_LAYOUT'] == 'True' else False
 
 
 class UserView(ExtendedModelView):
     column_display_pk = True
     column_hide_backrefs = False
     column_list = ('id', 'email', 'password', 'firstname', 'lastname', 'phone', 'role', 'bookings')
-    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if secrets['FLASK_ADMIN_FLUID_LAYOUT'] == 'True' else False
 
 
 admin = Admin(app, template_mode='bootstrap4')

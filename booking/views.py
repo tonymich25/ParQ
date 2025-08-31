@@ -11,7 +11,7 @@ from flask_login import login_required, current_user
 from flask_socketio import join_room, emit
 from booking.redis import redis_sadd, redis_srem, redis_smembers, redis_hget, redis_hset, redis_delete, redis_hdel, redis_keys, redis_hgetall
 from booking.forms import BookingForm
-from config import City, db, ParkingLot, Booking, ParkingSpot, app, socketio, redis_client
+from config import City, db, ParkingLot, Booking, ParkingSpot, app, socketio, redis_client, secrets
 
 booking_bp = Blueprint('booking_bp', __name__, template_folder='templates')
 
@@ -135,7 +135,7 @@ def payment_success():
         return redirect(url_for('dashboard.dashboard'))
 
 def generate_qr_code(new_booking_id):
-    key = os.getenv("FERNET_KEY")
+    key = secrets["FERNET_KEY"]
     cipher = Fernet(key.encode())
     encrypted = cipher.encrypt(str(new_booking_id).encode()).decode()
 

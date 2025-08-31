@@ -1,6 +1,6 @@
-from config import app, socketio, db
-from flask import render_template
 import errors
+from config import app
+from flask import render_template
 
 # Registering errors
 app.register_error_handler(400, errors.bad_request)
