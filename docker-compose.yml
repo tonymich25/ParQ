@@ -8,6 +8,7 @@ services:
     environment:
       - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
       - PYTHONPATH=.
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - .:/app
     working_dir: /app
@@ -55,6 +56,18 @@ services:
       - app_network
     restart: unless-stopped
 
+
+  redis:
+    image: redis:7-alpine
+    container_name: parking_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app_network
+
 #  certbot:
 #    image: certbot/certbot
 #    container_name: parking_certbot
@@ -69,6 +82,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   app_network:
