@@ -20,7 +20,7 @@ client = InfisicalSDKClient(
         host="https://app.infisical.com",
         token=os.environ.get("INFISICAL_TOKEN"))
 secrets_response = client.secrets.list_secrets(
-    project_id="INSERT_PROJECT_ID",
+    project_id="20e67748-b5f9-42e9-913f-577ec194f3c7",
     environment_slug="dev",
     secret_path="/"
 )
@@ -51,8 +51,8 @@ stripe.api_key = STRIPE_SECRET_KEY
 app.config['REDIS_URL'] = secrets['REDIS_URL']
 redis_client = redis.from_url(app.config['REDIS_URL'])
 
-from booking.redis import init_redis_scripts
-init_redis_scripts()
+from booking.redis_utils import init_redis_scripts
+init_redis_scripts(redis_client, app)
 
 socketio = SocketIO(
         app,
@@ -206,17 +206,6 @@ class IdempotencyKey(db.Model):
     result = db.Column(db.JSON)  # Stores the response of the operation
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-
-
-class Outbox(db.Model):
-    __tablename__ = 'outbox'
-    id = db.Column(db.Integer, primary_key=True)
-    event_type = db.Column(db.String(100), nullable=False)
-    payload = db.Column(db.JSON, nullable=False)
-    dispatched = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.now)
-    dispatched_at = db.Column(db.DateTime, nullable=True)
-
 
 class SpotLease(db.Model):
     __tablename__ = 'spot_leases'
