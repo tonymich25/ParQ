@@ -4,6 +4,24 @@
 ### explicit written permission is prohibited.
 
 
+"""
+Lease Management System:
+
+CORE FEATURES:
+- Redis SET NX EX for atomic lease acquisition
+- Idempotency support for payment retries  
+- Lease metadata for validation and auditing
+
+DESIGN DECISIONS:
+- No outbox pattern: Redis TTL provides automatic cleanup
+- No background workers: Redis expiration handles cleanup
+- Simple DEL for release: Atomicity already guaranteed by single Redis instance
+
+OPTIONAL ENHANCEMENTS:
+- Lua script available for distributed lock scenarios
+- Could add monitoring for lease expiration events
+"""
+
 # How to run application
 1. Use python 3.9 and download all packages form requirements.txt
 2. Run app.py

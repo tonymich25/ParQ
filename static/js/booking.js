@@ -515,3 +515,62 @@ function displayRandomAIMessage() {
         change = false;
     }
 }
+
+
+
+
+function openWebSocketConnection(parkingLotId) {
+    // If socket already exists and is connected, reuse it
+    if (socket && socket.connected) {
+        socket.emit('subscribe', {
+            parkingLotId: parkingLotId,
+            bookingDate: document.getElementById("bookingDate").value,
+            startTime: document.querySelector('[name="startHour"]').value + ":" +
+                     document.querySelector('[name="startMinute"]').value,
+            endTime: document.querySelector('[name="endHour"]').value + ":" +
+                   document.querySelector('[name="endMinute"]').value
+        });
+        return;
+    }
+
+    // Only create new socket if none exists or it's disconnected
+    if (!socket || !socket.connected) {
+        socket = io(window.location.origin);
+
+        // Add all event listeners here ONCE
+        socket.on('connect', () => {
+            console.log('WebSocket connected, subscribing...');
+            socket.emit('subscribe', {
+                parkingLotId: parkingLotId,
+                bookingDate: document.getElementById("bookingDate").value,
+            });
+        });
+
+        socket.on('spot_update', (data) => {
+            console.log('Spot update received:', data);
+            updateSpotAvailability(data.spotId, data.available);
+        });
+
+        socket.on('payment_redirect', (data) => {
+            window.location.href = data.url;
+        });
+
+        socket.on('booking_failed', (data) => {
+            alert(`Booking failed: ${data.reason}`);
+            document.getElementById("submit-button").disabled = false;
+            document.getElementById("submit-button").innerHTML = 'Confirm Booking';
+        });
+
+        socket.on('book_spot_response', (data) => {
+            isBooking = false;  // Reset booking state
+
+            if (!data.success) {
+                alert(`Booking failed: ${data.reason}`);
+                document.getElementById("submit-button").disabled = false;
+                document.getElementById("submit-button").innerHTML = 'Confirm Booking';
+            }
+        });
+
+
+    }
+}

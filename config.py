@@ -50,6 +50,10 @@ stripe.api_key = STRIPE_SECRET_KEY
 
 app.config['REDIS_URL'] = secrets['REDIS_URL']
 redis_client = redis.from_url(app.config['REDIS_URL'])
+
+from booking.redis import init_redis_scripts
+init_redis_scripts()
+
 socketio = SocketIO(
         app,
         cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"],
@@ -195,6 +199,37 @@ class ParkingSpot(db.Model, UserMixin):
     pricePerHour = db.Column(db.Float, nullable=False)
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
+
+class IdempotencyKey(db.Model):
+    __tablename__ = 'idempotency_keys'
+    key = db.Column(db.String(255), primary_key=True)
+    result = db.Column(db.JSON)  # Stores the response of the operation
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class Outbox(db.Model):
+    __tablename__ = 'outbox'
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(100), nullable=False)
+    payload = db.Column(db.JSON, nullable=False)
+    dispatched = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    dispatched_at = db.Column(db.DateTime, nullable=True)
+
+
+class SpotLease(db.Model):
+    __tablename__ = 'spot_leases'
+    id = db.Column(db.Integer, primary_key=True)
+    spot_id = db.Column(db.Integer, db.ForeignKey('parking_spots.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    reservation_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
+    parking_lot_id = db.Column(db.Integer, nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    held_until = db.Column(db.DateTime, nullable=False)
+    processed = db.Column(db.Boolean, default=False)
 
 
 class MainIndexLink(MenuLink):

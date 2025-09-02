@@ -1,6 +1,71 @@
 import json
 import redis
-from config import redis_client
+from config import redis_client, app
+
+def redis_health_check():
+    try:
+        return redis_client.ping()
+    except redis.RedisError:
+        return False
+
+LEASE_ACQUIRE_SCRIPT = """
+return redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2])
+"""
+
+LEASE_RENEW_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+"""
+
+LEASE_DELETE_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+
+def init_redis_scripts():
+    global lease_acquire_script, lease_renew_script, lease_delete_script
+    try:
+        lease_acquire_script = redis_client.register_script(LEASE_ACQUIRE_SCRIPT)
+        lease_renew_script = redis_client.register_script(LEASE_RENEW_SCRIPT)
+        lease_delete_script = redis_client.register_script(LEASE_DELETE_SCRIPT)
+        app.logger.info("Redis scripts registered successfully")
+    except Exception as e:
+        app.logger.error(f"Failed to register Redis scripts: {str(e)}")
+        raise
+def redis_acquire_lease(key, value, ttl):
+    try:
+        result = lease_acquire_script(keys=[key], args=[value, ttl])
+        return result is not None  # Convert to boolean
+    except redis.RedisError as e:
+        print(f"Redis lease acquire error for key {key}: {str(e)}")
+        return False
+
+def redis_renew_lease(key, value, ttl):
+    try:
+        return lease_renew_script(keys=[key], args=[value, ttl]) == 1
+    except redis.RedisError as e:
+        print(f"Redis lease renew error for key {key}: {str(e)}")
+        return False
+
+def redis_delete_lease(key, value):
+    try:
+        return lease_delete_script(keys=[key], args=[value]) == 1
+    except redis.RedisError as e:
+        print(f"Redis lease delete error for key {key}: {str(e)}")
+        return False
+
+def redis_get(key):
+    """Safe get with error handling"""
+    try:
+        value = redis_client.get(key)
+        return value.decode('utf-8') if value else None
+    except redis.RedisError as e:
+        print(f"Redis GET error for key {key}: {str(e)}")
+        return None
 
 def redis_sadd(key, value):
     try:

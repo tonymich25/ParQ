@@ -9,7 +9,9 @@ from cryptography.fernet import Fernet
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from flask_socketio import join_room, emit
-from booking.redis import redis_sadd, redis_srem, redis_smembers, redis_hget, redis_hset, redis_delete, redis_hdel, redis_keys, redis_hgetall
+from .booking_service import acquire_lease, confirm_booking
+from booking.redis import redis_sadd, redis_srem, redis_smembers, redis_hget, redis_hset, redis_delete, redis_hdel, \
+    redis_delete_lease, redis_keys, redis_get
 from booking.forms import BookingForm
 from config import City, db, ParkingLot, Booking, ParkingSpot, app, socketio, redis_client, secrets
 
@@ -23,6 +25,7 @@ def booking_form():
     form.city.choices = [(city.id, city.city) for city in cities]
     return render_template('booking/booking.html', form=form)
 
+
 @booking_bp.route('/city_selected', methods=['POST'])
 def city_selected():
     data = request.get_json()
@@ -35,19 +38,23 @@ def city_selected():
         'lat': lot.lat,
         'long': lot.long, } for lot in parkingLots])
 
-def create_booking(session, spot):
+
+def create_booking_from_session(session, spot):
+    """Create booking from Stripe session using new leasing data"""
     return Booking(
-        userid=session.metadata.get('user_id'),
-        parking_lot_id=spot.parkingLotId,
-        spot_id=session.metadata.get('spot_id'),
+        userid=int(session.metadata.get('user_id')),
+        parking_lot_id=int(session.metadata.get('parking_lot_id')),
+        spot_id=int(session.metadata.get('spot_id')),
         bookingDate=datetime.strptime(session.metadata.get('booking_date'), '%Y-%m-%d').date(),
         startTime=datetime.strptime(session.metadata.get('start_time'), '%H:%M').time(),
         endTime=datetime.strptime(session.metadata.get('end_time'), '%H:%M').time(),
         amount=float(session.amount_total) / 100,
     )
 
+
 @booking_bp.route('/payment_success', methods=['GET'])
 def payment_success():
+    from booking.booking_service import confirm_booking
     session_id = request.args.get('session_id')
 
     if not session_id:
@@ -56,55 +63,62 @@ def payment_success():
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
+        reservation_id = session.metadata.get('reservation_id')
+        spot_id = session.metadata.get('spot_id')
+        parking_lot_id = session.metadata.get('parking_lot_id')
         booking_date = session.metadata.get('booking_date')
         start_time = session.metadata.get('start_time')
         end_time = session.metadata.get('end_time')
-        spot_id = session.metadata.get('spot_id')
+
+        if not all([reservation_id, spot_id, parking_lot_id, booking_date, start_time, end_time]):
+            flash("Invalid payment session data. Please try again.", "error")
+            return redirect(url_for('booking_bp.booking_form'))
 
         spot = ParkingSpot.query.get(spot_id)
+        if not spot:
+            flash("Invalid spot. Please try again.", "error")
+            return redirect(url_for('booking_bp.booking_form'))
 
-        with db.session.begin_nested():
-            # Check spot hold using Redis
-            hold_data = redis_hget("spot_holds", str(spot_id))
-            if not hold_data or hold_data.get('user_id') != str(current_user.id):
-                flash("Booking session expired. Please try again.", "error")
-                return redirect(url_for('booking_bp.booking_form'))
+        # Prepare booking data for confirmation
+        booking_data = {
+            'parking_lot_id': parking_lot_id,
+            'booking_date': booking_date,
+            'start_time': start_time,
+            'end_time': end_time
+        }
 
-            start_time_obj = datetime.strptime(start_time, '%H:%M').time()
-            end_time_obj = datetime.strptime(end_time, '%H:%M').time()
+        # Use idempotency key (Stripe session ID)
+        idempotency_key = f"stripe_{session_id}"
 
-            if is_spot_available(spot, session.metadata['parking_lot_id'],
-                                 booking_date, start_time_obj, end_time_obj) > 0:
-                # Spot taken -> Refund
+        # Confirm the booking with atomic transaction
+        result, status_code = confirm_booking(
+            reservation_id=reservation_id,
+            spot_id=spot_id,
+            user_id=current_user.get_id(),
+            booking_data=booking_data,
+            idempotency_key=idempotency_key
+        )
+
+        if status_code != 200:
+            # Booking failed - issue refund
+            try:
                 stripe.Refund.create(payment_intent=session.payment_intent)
-                emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
+                flash("Booking failed. Refund issued. Please try again.", "error")
+            except stripe.error.StripeError:
+                flash("Booking failed. Please contact support for refund.", "error")
+            return redirect(url_for('booking_bp.booking_form'))
 
-                # Remove spot hold using Redis
-                if redis_hget("spot_holds", str(spot_id)):
-                    redis_hdel("spot_holds", str(spot_id))
+        # Booking successful
+        booking_id = result.get('booking_id')
+        if not booking_id:
+            flash("Booking completed but could not retrieve booking details.", "warning")
+            return redirect(url_for('dashboard.dashboard'))
 
-                flash("Spot taken during payment. Refund issued.", "error")
-                return redirect(url_for('booking_bp.booking_form'))
-
-            hold_until = datetime.fromtimestamp(float(session.metadata['hold_until']), tz=ZoneInfo("Europe/Nicosia"))
-            if hold_until <= datetime.now(ZoneInfo("Europe/Nicosia")):
-                stripe.Refund.create(payment_intent=session.payment_intent)
-                emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
-
-                # Remove spot hold using Redis
-                if redis_hget("spot_holds", str(spot_id)):
-                    redis_hdel("spot_holds", str(spot_id))
-
-                flash("Spot holding time passed. Refund issued.", "error")
-                return redirect(url_for('booking_bp.booking_form'))
-
-        # Remove spot hold using Redis
-        if redis_hget("spot_holds", str(spot_id)):
-            redis_hdel("spot_holds", str(spot_id))
-
-        new_booking = create_booking(session, spot)
-        db.session.add(new_booking)
-        db.session.commit()
+        # Fetch the booking from database to generate QR code
+        new_booking = Booking.query.get(booking_id)
+        if not new_booking:
+            flash("Booking completed but details not found.", "warning")
+            return redirect(url_for('dashboard.dashboard'))
 
         generate_qr_code(new_booking.id)
         disconnect_user(session)
@@ -113,26 +127,14 @@ def payment_success():
         return redirect(url_for('dashboard.dashboard'))
 
     except stripe.error.StripeError as e:
-        emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
-        current_app.logger.error(f"Stripe error: {str(e)}")
+        current_app.logger.error(f"Stripe error in payment_success: {str(e)}")
         flash("Payment processing error. Please contact support.", "error")
         return redirect(url_for('booking_bp.booking_form'))
     except Exception as e:
-        spot_id = session.metadata.get('spot_id') if session else None
-        booking_date = session.metadata.get('booking_date') if session else None
-
-        if spot_id:
-            spot = ParkingSpot.query.get(spot_id)
-        if spot:
-            emit_to_relevant_rooms_about_booking(spot, booking_date, True, False)
-
-        # Cleanup spot hold using Redis
-        if spot_id and redis_hget("spot_holds", str(spot_id)):
-            redis_hdel("spot_holds", str(spot_id))
-
-        current_app.logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        current_app.logger.error(f"Unexpected error in payment_success: {str(e)}", exc_info=True)
         flash("Payment received! If your booking doesn't appear, contact support.", "warning")
         return redirect(url_for('dashboard.dashboard'))
+
 
 def generate_qr_code(new_booking_id):
     key = secrets["FERNET_KEY"]
@@ -141,6 +143,7 @@ def generate_qr_code(new_booking_id):
 
     img = qrcode.make(encrypted)
     img.save(f"static/qr_codes/{new_booking_id}.png")
+
 
 def disconnect_user(session):
     user_id = session.metadata['user_id']
@@ -160,6 +163,7 @@ def disconnect_user(session):
             socketio.disconnect(sid)
             # Remove from room
             redis_srem(room_key, sid)
+
 
 def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, return_confirmation, start_time=None,
                                          end_time=None):
@@ -222,6 +226,7 @@ def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, retur
         print(f"Emission error: {str(e)}")
         return False
 
+
 @socketio.on('connect')
 def handle_connect():
     print("Client connected: ", request.sid)
@@ -231,6 +236,7 @@ def handle_connect():
         'rooms': '[]',
         'user_id': str(current_user.get_id()) if current_user.is_authenticated else 'anonymous'
     })
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -265,6 +271,7 @@ def handle_disconnect():
     redis_hdel("active_connections", sid)
     print(f"Disconnect complete for {sid}\n")
 
+
 def calculate_price(startTime, endTime, spotPricePerHour):
     # Create datetime objects combining today's date with the times
     start_dt = datetime.combine(datetime.today().date(), startTime)
@@ -277,7 +284,8 @@ def calculate_price(startTime, endTime, spotPricePerHour):
     price_cents = int(round(duration_hours * spotPricePerHour * 100))
     return max(price_cents, 50)  # Ensure minimum charge of 50 cents
 
-def create_stripe_session(data, startTimeStr, endTimeStr, spot, hold_until):
+
+def create_stripe_session(data, startTimeStr, endTimeStr, spot, reservation_id):
     try:
         # Convert strings to datetime objects for price calculation
         start_time = datetime.strptime(startTimeStr, "%H:%M").time()
@@ -303,13 +311,13 @@ def create_stripe_session(data, startTimeStr, endTimeStr, spot, hold_until):
             success_url=url_for('booking_bp.payment_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}',
             cancel_url=url_for('booking_bp.booking_form', _external=True),
             metadata={
-                'user_id': current_user.get_id(),
-                'spot_id': data.get('spotId'),
-                'parking_lot_id': data.get('parkingLotId'),
+                'user_id': str(current_user.get_id()),
+                'spot_id': str(data.get('spotId')),
+                'parking_lot_id': str(data.get('parkingLotId')),
                 'booking_date': data.get('bookingDate'),
                 'start_time': startTimeStr,
                 'end_time': endTimeStr,
-                'hold_until': hold_until.timestamp() if hasattr(hold_until, 'timestamp') else hold_until
+                'reservation_id': reservation_id
             }
         )
         return checkout_session.url
@@ -317,9 +325,10 @@ def create_stripe_session(data, startTimeStr, endTimeStr, spot, hold_until):
         current_app.logger.error(f"Stripe session creation failed: {str(e)}", exc_info=True)
         return None
 
+
 @socketio.on('book_spot')
 def book_spot(data):
-    ok = False
+    from booking.booking_service import acquire_lease
     try:
         spot = ParkingSpot.query.get(data.get('spotId'))
         if not spot:
@@ -333,74 +342,66 @@ def book_spot(data):
         start_time = datetime.strptime(start_time_str, "%H:%M").time()
         end_time = datetime.strptime(end_time_str, "%H:%M").time()
 
-        if is_spot_available(spot, data.get('parkingLotId'), data.get('bookingDate'), start_time, end_time) > 0:
-            emit('booking_failed', {'reason': 'taken'})
+        # Use new leasing system instead of old spot_holds
+        reservation_id = acquire_lease(
+            spot_id=spot.id,
+            user_id=current_user.get_id(),
+            parking_lot_id=data.get('parkingLotId'),
+            booking_date=data.get('bookingDate'),
+            start_time=start_time_str,
+            end_time=end_time_str
+        )
+
+        if not reservation_id:
+            emit('booking_failed', {'reason': 'Spot already taken'})
             return
 
-        hold_until = datetime.now(ZoneInfo("Europe/Nicosia")) + timedelta(seconds=240)
+        # Emit update to make spot appear taken
+        ok = emit_to_relevant_rooms_about_booking(
+            spot,
+            data.get('bookingDate'),
+            False,
+            True,
+            start_time,
+            end_time
+        )
 
-        # Store spot hold in Redis
-        hold_data = {
-            'held_until': hold_until.timestamp(),
-            'user_id': str(current_user.get_id()),
-            'parking_lot_id': str(data.get('parkingLotId')),
-            'booking_date': data.get('bookingDate'),
-            'start_time': start_time_str,
-            'end_time': end_time_str
-        }
-        redis_hset("spot_holds", str(spot.id), hold_data)
+        checkout_url = create_stripe_session(
+            data,
+            start_time_str,
+            end_time_str,
+            spot,
+            reservation_id
+        )
 
-        db.session.commit()
-
-        ok = emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), False, True, start_time, end_time)
-        print("EMITTED ", ok)
-
-        checkout_url = create_stripe_session(data, start_time_str, end_time_str, spot, hold_until)
         if not checkout_url:
             emit('booking_failed', {'reason': 'Payment system error'})
+            # Release the lease if payment fails
+            lease_key = f"spot_lease:{spot.id}"
+            redis_delete_lease(lease_key, reservation_id)
             emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, False)
-
-            # Remove spot hold from Redis
-            redis_hdel("spot_holds", str(spot.id))
-
-            db.session.flush()
             return
 
-        threading.Timer(240, lambda: release_spot_if_unpaid(spot.id, data.get('bookingDate'))).start()
+        emit('payment_redirect', {'url': checkout_url})
 
-        emit('payment_redirect', {
-            'url': checkout_url,
-        })
-
-        # Add to payment room using Redis
-        redis_sadd(f"room_payment:{checkout_url}", request.sid)
-        print("added to payment room")
+        # Store reservation_id in connection data for later retrieval
+        conn_data = redis_hget("active_connections", request.sid) or {}
+        conn_data['reservation_id'] = reservation_id
+        redis_hset("active_connections", request.sid, conn_data)
 
     except Exception as e:
-        if ok is True:
-            emit_to_relevant_rooms_about_booking(spot, data.get('bookingDate'), True, False)
-            # Remove spot hold from Redis if booking failed
-            redis_hdel("spot_holds", str(spot.id))
+        current_app.logger.error(f"Booking failed: {str(e)}")
+        emit('booking_failed', {'reason': str(e)})
 
-        emit('booking_failed', {
-            'reason': str(e)
-        })
 
 def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
-    # Check spot holds using Redis
-    hold_data = redis_hget("spot_holds", str(spot.id))
-    if hold_data:
-        held_until = datetime.fromtimestamp(float(hold_data['held_until']), tz=ZoneInfo("Europe/Nicosia"))
+    # Check Redis lease first (new system)
+    lease_key = f"spot_lease:{spot.id}"
+    current_lease = redis_get(lease_key)
 
-        if held_until > datetime.now(ZoneInfo("Europe/Nicosia")):
-            held_start = datetime.strptime(hold_data['start_time'], "%H:%M").time()
-            held_end = datetime.strptime(hold_data['end_time'], "%H:%M").time()
-
-            # If current user overlaps, consider spot available
-            if hold_data['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
-                if hold_data['user_id'] == str(current_user.id):
-                    return 0  # Spot is held (not available) for overlapping time
-                return 1
+    # If there's an active lease, spot is not available
+    if current_lease:
+        return 1
 
     # Check existing bookings
     return Booking.query.filter(
@@ -411,31 +412,61 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
         Booking.endTime > startTime
     ).count()
 
+
 def release_spot_if_unpaid(spot_id, bookingDate):
-    with app.app_context():
+    """Legacy function - will be removed after migration"""
+    pass
+
+
+@socketio.on('subscribe')
+def handle_subscribe(data):
+    try:
+        parking_lot_id = data.get('parkingLotId')
+        booking_date = data.get('bookingDate')
+        start_time = data.get('startTime')
+        end_time = data.get('endTime')
+        if not parking_lot_id or not booking_date:
+            print("Invalid subscription: missing required fields")
+            return
+        new_room_name = f"lot_{parking_lot_id}_{booking_date}"
+        conn_data = redis_hget(redis_client, "active_connections", request.sid) or {}  # ADD redis_client
+        rooms_data = conn_data.get('rooms', '[]')
         try:
-            print(f"Checking if spot {spot_id} should be released")
-            now = datetime.now(ZoneInfo("Europe/Nicosia"))
-
-            # Check spot hold using Redis
-            hold_data = redis_hget("spot_holds", str(spot_id))
-            if hold_data:
-                if float(hold_data['held_until']) < now.timestamp():
-                    print(f"Releasing hold on spot {spot_id}")
-                    spot = ParkingSpot.query.get(spot_id)
-                    if spot:
-                        emit_to_relevant_rooms_about_booking(spot, bookingDate, True, False)
-
-                    # Remove spot hold from Redis
-                    redis_hdel("spot_holds", str(spot_id))
-                else:
-                    print(f"Hold on spot {spot_id} not yet expired")
+            if isinstance(rooms_data, str):
+                current_rooms = json.loads(rooms_data)
+            elif isinstance(rooms_data, list):
+                current_rooms = rooms_data
             else:
-                print(f"No active hold found for spot {spot_id}")
+                current_rooms = []
+        except (json.JSONDecodeError, TypeError):
+            current_rooms = []
+        if new_room_name in current_rooms:
+            conn_data.update({
+                'startTime': start_time,
+                'endTime': end_time
+            })
+            redis_hset(redis_client, "active_connections", request.sid, conn_data)  # ADD redis_client
+        else:
+            for room in current_rooms:
+                if isinstance(room, str) and room.startswith('lot_'):
+                    leave_room(room)
+                    redis_srem(redis_client, f"active_rooms:{room}", request.sid)  # ADD redis_client
+                    if not redis_smembers(redis_client, f"active_rooms:{room}"):  # ADD redis_client
+                        redis_delete(redis_client, f"active_rooms:{room}")  # ADD redis_client
+            join_room(new_room_name)
+            redis_sadd(redis_client, f"active_rooms:{new_room_name}", request.sid)  # ADD redis_client
+            current_rooms.append(new_room_name)
+            conn_data.update({
+                'parkingLotId': str(parking_lot_id),
+                'bookingDate': booking_date,
+                'startTime': start_time,
+                'endTime': end_time,
+                'rooms': json.dumps(current_rooms)
+            })
+            redis_hset(redis_client, "active_connections", request.sid, conn_data)  # ADD redis_client
+    except Exception as e:
+        print(f"Subscription error for {request.sid}: {str(e)}")
 
-        except Exception as e:
-            print(f"Error in release_spot_if_unpaid: {str(e)}")
-            current_app.logger.error(f"Error releasing spot {spot_id}: {str(e)}")
 
 @socketio.on('subscribe')
 def handle_subscribe(data):
@@ -506,6 +537,7 @@ def handle_subscribe(data):
     except Exception as e:
         print(f"Subscription error for {request.sid}: {str(e)}")
 
+
 @booking_bp.route('/check_spot_availability', methods=['POST'])
 def check_spot_availability():
     try:
@@ -526,22 +558,15 @@ def check_spot_availability():
         now = datetime.now(ZoneInfo("Europe/Nicosia"))
         allSpots = parkingLot.spots
 
-        # Get all active holds from Redis
-        active_holds = {}
-        # Get all spot IDs from Redis hash
-        spot_ids = redis_client.hkeys("spot_holds")
-
-        for spot_id_bytes in spot_ids:
-            spot_id = spot_id_bytes.decode('utf-8')
-            hold = redis_hget("spot_holds", spot_id)
-            if hold and isinstance(hold, dict):
-                held_until = datetime.fromtimestamp(float(hold['held_until']), ZoneInfo("Europe/Nicosia"))
-                if held_until > now and hold.get('parking_lot_id') == str(parkingLotId):
-                    # Check if the hold is for the same date and times overlap
-                    held_start = datetime.strptime(hold['start_time'], "%H:%M").time()
-                    held_end = datetime.strptime(hold['end_time'], "%H:%M").time()
-                    if hold['booking_date'] == bookingDate and not (endTime <= held_start or startTime >= held_end):
-                        active_holds[spot_id] = hold
+        # Get all active leases from Redis (new system)
+        active_leases = {}
+        # Use Redis pattern matching to find all spot leases
+        lease_keys = redis_keys("spot_lease:*")
+        for lease_key in lease_keys:
+            spot_id = lease_key.replace("spot_lease:", "")
+            reservation_id = redis_get(lease_key)
+            if reservation_id:
+                active_leases[spot_id] = {'reservation_id': reservation_id}
 
         # Get conflicting bookings
         conflicting_bookings = Booking.query.filter(
@@ -552,12 +577,12 @@ def check_spot_availability():
         ).with_entities(Booking.spot_id).all()
 
         booked_spot_ids = {b[0] for b in conflicting_bookings}
-        held_spot_ids = set(active_holds.keys())
+        leased_spot_ids = set(active_leases.keys())
 
         spots_data = []
         for spot in allSpots:
             is_available = (spot.id not in booked_spot_ids and
-                            str(spot.id) not in held_spot_ids)
+                            str(spot.id) not in leased_spot_ids)
 
             spots_data.append({
                 'id': spot.id,
@@ -570,7 +595,7 @@ def check_spot_availability():
         return jsonify({
             'image_filename': parkingLot.image_filename,
             'spots': spots_data,
-            'holds': list(held_spot_ids)
+            'leases': list(leased_spot_ids)  # Return leased spots for UI
         })
 
     except Exception as e:
