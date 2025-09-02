@@ -1,52 +1,68 @@
 import threading
 import redis
+from flask import current_app
 from config import redis_client, socketio, app
 from booking.utils import emit_to_relevant_rooms_about_booking
-from config import ParkingSpot
+from config import ParkingSpot, db, app
+
 
 def start_redis_expiration_listener():
+    """Start a thread to listen for Redis key expiration events"""
+
     def expiration_listener():
         try:
-            pubsub_redis = redis.from_url(app.config['REDIS_URL'])
-            pubsub = pubsub_redis.pubsub()
+            with app.app_context():
+                app.logger.info("Starting Redis expiration listener...")
 
-            pubsub.psubscribe('__keyevent@0__:expired')
+                try:
+                    redis_client.config_set('notify-keyspace-events', 'Ex')
+                    app.logger.info("Redis keyspace notifications enabled")
+                except redis.exceptions.ResponseError:
+                    app.logger.warning("Redis keyspace notifications may need server config")
 
-            print("Redis expiration listener started")
+                pubsub_redis = redis.from_url(current_app.config['REDIS_URL'])
+                pubsub = pubsub_redis.pubsub()
 
-            for message in pubsub.listen():
-                if message['type'] == 'pmessage':
-                    expired_key = message['data'].decode('utf-8')
+                pubsub.psubscribe('__keyevent@0__:expired')
+                app.logger.info("Subscribed to Redis expiry events")
 
-                    if expired_key.startswith('spot_lease:'):
-                        key_parts = expired_key.split(':')
-                        if len(key_parts) < 2:
-                            continue
+                app.logger.info("Redis expiration listener started")
 
-                        spot_date_parts = key_parts[1].split('_')
-                        if len(spot_date_parts) < 2:
-                            continue
+                for message in pubsub.listen():
+                    if message['type'] == 'pmessage':
+                        expired_key = message['data'].decode('utf-8')
+                        app.logger.info(f"Received expiry event: {expired_key}")
 
-                        spot_id = spot_date_parts[0]
-                        booking_date = '_'.join(spot_date_parts[1:])
+                        if expired_key.startswith('spot_lease:'):
+                            key_parts = expired_key.split(':')
+                            if len(key_parts) < 2:
+                                continue
 
-                        print(f"Lease expired for spot {spot_id} on {booking_date}")
+                            spot_date_parts = key_parts[1].split('_')
+                            if len(spot_date_parts) < 2:
+                                continue
 
-                        spot = ParkingSpot.query.get(spot_id)
-                        if spot:
-                            emit_to_relevant_rooms_about_booking(
-                                spot,
-                                booking_date,
-                                True,
-                                False
-                            )
+                            spot_id = spot_date_parts[0]
+                            booking_date = '_'.join(spot_date_parts[1:])
+
+                            app.logger.info(f"Lease expired for spot {spot_id} on {booking_date}")
+
+                            with app.app_context():
+                                spot = ParkingSpot.query.get(spot_id)
+                                if spot:
+                                    emit_to_relevant_rooms_about_booking(
+                                        spot,
+                                        booking_date,
+                                        True,
+                                        False
+                                    )
+                                    app.logger.info(f"Emitted expiry update for spot {spot_id}")
+                                else:
+                                    app.logger.warning(f"Spot not found: {spot_id}")
 
         except Exception as e:
-            print(f"Redis expiration listener error: {str(e)}")
+            app.logger.error(f"Redis expiration listener error: {str(e)}", exc_info=True)
 
     thread = threading.Thread(target=expiration_listener, daemon=True)
     thread.start()
-
-@app.before_first_request
-def startup():
-    start_redis_expiration_listener()
+    app.logger.info("Redis expiry listener thread started")

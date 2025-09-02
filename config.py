@@ -260,3 +260,10 @@ from booking.views import booking_bp
 app.register_blueprint(accounts_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(booking_bp)
+
+
+def startup():
+    from booking.redis_pubsub import start_redis_expiration_listener
+    start_redis_expiration_listener()
+
+startup()
