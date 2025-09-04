@@ -40,6 +40,7 @@ function onTimeChange() {
     console.log("Time changed:", startTime, endTime);
     checkTimeValidity();
 
+    // 🎯 FIX: Only open WebSocket connection if we have all required data
     const parkingLotId = document.getElementById('parking-lot-select').value;
     const bookingDate = document.getElementById('bookingDate').value;
 
@@ -136,6 +137,7 @@ function checkTimeValidity() {
         isValid = false;
         errorMessage = "Please select a booking date.";
     } else {
+        // Convert to Date objects for proper comparison
         const startTime = new Date(2000, 0, 1, startHour, startMinute);
         const endTime = new Date(2000, 0, 1, endHour, endMinute);
 
@@ -148,6 +150,7 @@ function checkTimeValidity() {
     errorDiv.textContent = errorMessage;
     submitButton.disabled = !isValid;
 
+    // 🎯 ALSO disable if no spot is selected
     const spotSelected = document.getElementById("selected-spot-id").value !== "";
     submitButton.disabled = !isValid || !spotSelected;
 
@@ -252,11 +255,13 @@ function openWebSocketConnection(parkingLotId) {
     const endHour = document.querySelector('[name="endHour"]').value;
     const endMinute = document.querySelector('[name="endMinute"]').value;
 
+    // Ensure we have valid values (use defaults if empty)
     const startTime = startHour && startMinute ?
         `${startHour.padStart(2, '0')}:${startMinute.padStart(2, '0')}` : '00:00';
     const endTime = endHour && endMinute ?
         `${endHour.padStart(2, '0')}:${endMinute.padStart(2, '0')}` : '23:59';
 
+    // If socket already exists and is connected, reuse it
     if (socket && socket.connected) {
         socket.emit('subscribe', {
             parkingLotId: parkingLotId,
@@ -267,9 +272,11 @@ function openWebSocketConnection(parkingLotId) {
         return;
     }
 
+    // Only create new socket if none exists or it's disconnected
     if (!socket || !socket.connected) {
         socket = io(window.location.origin);
 
+        // Add all event listeners here ONCE
         socket.on('connect', () => {
             console.log('WebSocket connected, subscribing...');
             socket.emit('subscribe', {
@@ -294,7 +301,7 @@ function openWebSocketConnection(parkingLotId) {
 
 
 	socket.on('book_failed', (data) => {
-    	    isBooking = false;
+    	    isBooking = false;  // Reset booking state
 
     	    if (!data.success) {
                 alert(`Booking failed: ${data.reason}`);
@@ -376,6 +383,8 @@ function fetchSpotStatus() {
 .then(data => {
         renderParkingSpots(data);
 
+        // 🎯 FIX: After rendering, check for real-time lease updates
+        // If we have an active socket connection, request latest lease status
         if (socket && socket.connected) {
             socket.emit('request_lease_updates', {
                 parkingLotId: parkingLotId,
@@ -535,6 +544,7 @@ document.getElementById("booking-form").addEventListener("submit", function (e) 
 
         socket.emit('book_spot', bookingMsg);
 
+        // Re-enable after 5 seconds if no response
         setTimeout(() => {
             isSubmitting = false;
             submitBtn.disabled = false;

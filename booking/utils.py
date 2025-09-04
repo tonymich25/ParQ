@@ -1,4 +1,4 @@
-from config import db, ParkingSpot, redis_client, app
+from config import db, ParkingSpot, redis_client
 from datetime import datetime
 import json
 from datetime import datetime
@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 from config import socketio, redis_client
 from booking.redis_utils import redis_smembers, redis_hget, redis_hset, redis_srem, redis_delete, redis_keys, redis_hdel
 
+
 def validate_lease(reservation_id, spot_id, user_id):
+    """Validate lease ownership and consistency using Redis metadata"""
     try:
         lease_data = redis_client.hgetall(f"lease_data:{reservation_id}")
         if not lease_data:
@@ -18,21 +20,25 @@ def validate_lease(reservation_id, spot_id, user_id):
         print(f"Lease validation error: {str(e)}")
         return False
 
-def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
-    app.logger.info(f"is_spot_available called - spot: {spot.id}, lot: {parkingLotId}, date: {bookingDate}, time: {startTime}-{endTime}")
 
+def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
+    current_app.logger.info(
+        f"🔍 is_spot_available called - spot: {spot.id}, lot: {parkingLotId}, date: {bookingDate}, time: {startTime}-{endTime}")
+
+    # 🎯 FIX: Add date to lease key to match acquisition format
     lease_key = f"spot_lease:{spot.id}_{bookingDate}"
     current_lease = redis_client.get(lease_key)
     if current_lease and isinstance(current_lease, bytes):
         current_lease = current_lease.decode('utf-8')
 
-    app.logger.info(f"Lease check - key: {lease_key}, current_lease: {current_lease}")
+    current_app.logger.info(f"🔍 Lease check - key: {lease_key}, current_lease: {current_lease}")
 
     if current_lease:
-        app.logger.info(f"Spot {spot.id} has active lease: {current_lease}")
-        return False
+        current_app.logger.info(f"❌ Spot {spot.id} has active lease: {current_lease}")
+        return False  # Spot is leased
 
     from config import Booking
+    # Check for conflicting bookings in database
     conflict_count = Booking.query.filter(
         Booking.spot_id == spot.id,
         Booking.parking_lot_id == parkingLotId,
@@ -41,10 +47,9 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
         Booking.endTime > startTime
     ).count()
 
-    app.logger.info(f"Database conflict check - conflicts: {conflict_count}")
+    current_app.logger.info(f"🔍 Database conflict check - conflicts: {conflict_count}")
 
-    return conflict_count == 0
-
+    return conflict_count == 0  # True if no conflicts
 
 
 def calculate_price(startTime, endTime, spotPricePerHour):
@@ -55,14 +60,15 @@ def calculate_price(startTime, endTime, spotPricePerHour):
     return max(price_cents, 50)
 
 
-
-
-def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, return_confirmation, start_time=None, end_time=None):
+def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, return_confirmation, start_time=None,
+                                         end_time=None):
+    """Emit spot update only to clients with overlapping time ranges"""
     try:
         target_room = f"lot_{spot.parkingLotId}_{booking_date}"
         print(f"\n=== Starting emission to {target_room} ===")
         print(f"Spot: {spot.id} | Available: {is_available} | Time Range: {start_time}-{end_time}")
 
+        # Check if room exists using Redis
         room_key = f"active_rooms:{target_room}"
         sids = redis_smembers(redis_client, room_key)
         if not sids:
@@ -71,11 +77,13 @@ def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, retur
 
         recipients = 0
         for sid in sids:
+            # Get connection data from Redis
             conn_data = redis_hget(redis_client, "active_connections", sid)
             if not conn_data:
                 print(f"Missing connection data for {sid}")
                 continue
 
+            # Get client's time range with validation
             try:
                 conn_start_str = conn_data.get('startTime')
                 conn_end_str = conn_data.get('endTime')
@@ -85,14 +93,21 @@ def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, retur
                 print(f"Invalid time format for {sid}: {e}")
                 continue
 
+            # 🎯 FIX: PROPER TIME OVERLAP LOGIC
             send_update = True
             if start_time and end_time and conn_start and conn_end:
+                # Check for time overlap - if either start or end falls within the other range
                 time_overlap = not (end_time <= conn_start or start_time >= conn_end)
 
+                # If making spot unavailable, only send if times overlap
                 if not is_available and not time_overlap:
                     send_update = False
 
-                print(f"Client {sid} | Times: {conn_start_str}-{conn_end_str} | Overlap: {time_overlap} | Send: {send_update}")
+                # If making spot available, send to all clients viewing this date
+                # (they might have different time ranges but should see availability changes)
+
+                print(
+                    f"Client {sid} | Times: {conn_start_str}-{conn_end_str} | Overlap: {time_overlap} | Send: {send_update}")
 
             if send_update:
                 socketio.emit('spot_update', {
