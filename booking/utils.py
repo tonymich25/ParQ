@@ -1,10 +1,12 @@
-from config import db, ParkingSpot, redis_client
+from config import db, ParkingSpot, redis_client, PendingBooking
 from datetime import datetime
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from config import socketio, redis_client
 from booking.redis_utils import redis_smembers, redis_hget, redis_hset, redis_srem, redis_delete, redis_keys, redis_hdel
+from config import app
+from flask import current_app
 
 
 def validate_lease(reservation_id, spot_id, user_id):
@@ -22,7 +24,7 @@ def validate_lease(reservation_id, spot_id, user_id):
 
 
 def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
-    current_app.logger.info(
+    app.logger.info(
         f"🔍 is_spot_available called - spot: {spot.id}, lot: {parkingLotId}, date: {bookingDate}, time: {startTime}-{endTime}")
 
     # 🎯 FIX: Add date to lease key to match acquisition format
@@ -31,10 +33,10 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
     if current_lease and isinstance(current_lease, bytes):
         current_lease = current_lease.decode('utf-8')
 
-    current_app.logger.info(f"🔍 Lease check - key: {lease_key}, current_lease: {current_lease}")
+    app.logger.info(f"🔍 Lease check - key: {lease_key}, current_lease: {current_lease}")
 
     if current_lease:
-        current_app.logger.info(f"❌ Spot {spot.id} has active lease: {current_lease}")
+        app.logger.info(f"❌ Spot {spot.id} has active lease: {current_lease}")
         return False  # Spot is leased
 
     from config import Booking
@@ -47,7 +49,7 @@ def is_spot_available(spot, parkingLotId, bookingDate, startTime, endTime):
         Booking.endTime > startTime
     ).count()
 
-    current_app.logger.info(f"🔍 Database conflict check - conflicts: {conflict_count}")
+    app.logger.info(f"🔍 Database conflict check - conflicts: {conflict_count}")
 
     return conflict_count == 0  # True if no conflicts
 
@@ -123,3 +125,70 @@ def emit_to_relevant_rooms_about_booking(spot, booking_date, is_available, retur
     except Exception as e:
         print(f"Emission error: {str(e)}")
         return False if return_confirmation else None
+
+
+def store_pending_booking(reservation_id, user_id, parking_lot_id, spot_id,
+                          booking_date, start_time, end_time, amount):
+    """Store booking in pending_bookings table"""
+    try:
+        pending_booking = PendingBooking(
+            reservation_id=reservation_id,
+            user_id=user_id,
+            parking_lot_id=parking_lot_id,
+            spot_id=spot_id,
+            booking_date=booking_date,
+            start_time=start_time,
+            end_time=end_time,
+            amount=amount,
+            expires_at=datetime.now() + timedelta(minutes=6)  # 30 min expiry
+        )
+        db.session.add(pending_booking)
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"❌ Failed to store pending booking: {str(e)}")
+        return False
+
+
+def delete_pending_booking(reservation_id):
+    """Delete from pending_bookings table"""
+    try:
+        PendingBooking.query.filter_by(reservation_id=reservation_id).delete()
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"❌ Failed to delete pending booking: {str(e)}")
+        return False
+
+
+def get_pending_booking(reservation_id):
+    """Retrieve pending booking data from database"""
+    try:
+        # Clean up expired bookings first
+        expired_count = PendingBooking.query.filter(PendingBooking.expires_at < datetime.now()).delete()
+        if expired_count > 0:
+            current_app.logger.info(f"🧹 Cleaned up {expired_count} expired pending bookings")
+        db.session.commit()
+
+        # Get the booking
+        pending_booking = PendingBooking.query.filter_by(reservation_id=reservation_id).first()
+        if pending_booking:
+            current_app.logger.info(f"✅ Retrieved pending booking {reservation_id}")
+            return {
+                'user_id': pending_booking.user_id,
+                'parking_lot_id': pending_booking.parking_lot_id,
+                'spot_id': pending_booking.spot_id,
+                'booking_date': pending_booking.booking_date,
+                'start_time': pending_booking.start_time,
+                'end_time': pending_booking.end_time,
+                'amount': pending_booking.amount
+            }
+        current_app.logger.warning(f"⚠️ Pending booking not found: {reservation_id}")
+        return None
+
+    except Exception as e:
+        current_app.logger.error(f"❌ Failed to retrieve pending booking: {str(e)}")
+        return None
+

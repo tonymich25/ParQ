@@ -13,6 +13,8 @@ from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
 
+from booking.resilient_redis_manager import ResilientRedisManager
+
 app = Flask(__name__)
 
 # LOAD .ENV FILE
@@ -58,7 +60,9 @@ socketio = SocketIO(
         app,
         cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"],
         async_mode='eventlet',
-        message_queue=app.config['REDIS_URL'],
+        client_manager=ResilientRedisManager(url=app.config['REDIS_URL']),
+        logger=True,
+        engineio_logger=True,
         manage_session=False
 )
 
@@ -221,6 +225,28 @@ class SpotLease(db.Model):
     processed = db.Column(db.Boolean, default=False)
 
 
+class PendingBooking(db.Model):
+    __tablename__ = 'pending_bookings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reservation_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    parking_lot_id = db.Column(db.Integer, nullable=False)
+    spot_id = db.Column(db.Integer, nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    expires_at = db.Column(db.DateTime, nullable=False)  # Cleanup timestamp
+
+    # Add index for faster lookups
+    __table_args__ = (
+        db.Index('idx_pending_reservation_id', 'reservation_id'),
+        db.Index('idx_pending_expires_at', 'expires_at'),
+        db.Index('idx_pending_user_id', 'user_id'),
+    )
+
 class MainIndexLink(MenuLink):
     def get_url(self):
         return url_for('index')
@@ -263,7 +289,32 @@ app.register_blueprint(booking_bp)
 
 
 def startup():
+    """
+    Initializes background tasks when an application worker starts.
+    This is the modern replacement for the deprecated `before_first_request`.
+    """
     from booking.redis_pubsub import start_redis_expiration_listener
     start_redis_expiration_listener()
 
 startup()
+
+
+
+def with_redis_circuit(func):
+    """Decorator to automatically handle Redis circuit breaker"""
+
+    def wrapper(*args, **kwargs):
+        global redis_circuit_open
+
+        if redis_circuit_open:
+            raise Exception("Redis circuit open - use fallback")
+
+        try:
+            return func(*args, **kwargs)
+        except redis.exceptions.ConnectionError:
+            # Open circuit on connection failure
+            redis_circuit_open = True
+            app.logger.warning("🔌 Redis connection failed - opening circuit")
+            raise Exception("Redis unavailable")
+
+    return wrapper

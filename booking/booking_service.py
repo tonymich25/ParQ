@@ -3,10 +3,42 @@ from sqlalchemy import select, update
 from flask import current_app
 from datetime import datetime, timedelta
 from config import redis_client, db, ParkingSpot, Booking  # REMOVE SpotLease
-from booking.redis_utils import redis_acquire_lease, redis_renew_lease, redis_delete_lease
+from booking.redis_utils import redis_renew_lease, redis_delete_lease, redis_delete_lease, redis_acquire_lease
 from booking.idempotency import check_idempotency, store_idempotency_result
 from zoneinfo import ZoneInfo
 from booking.utils import is_spot_available, calculate_price, emit_to_relevant_rooms_about_booking
+import redis
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from booking.db_utils import is_spot_available_in_db
+
+redis_circuit_open = False
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    retry=retry_if_exception_type(redis.RedisError),
+    reraise=True  # This ensures the exception is re-raised after retries
+)
+def acquire_lease_safe(spot_id, user_id, parking_lot_id, booking_date, start_time, end_time, ttl=240, reservation_id=None):
+    """Try to acquire a lease with retries. If it fails, open the circuit."""
+    global redis_circuit_open
+    try:
+        # ✅ Use the high-level acquire_lease function
+        success = acquire_lease(
+            spot_id=spot_id,
+            user_id=user_id,
+            parking_lot_id=parking_lot_id,
+            booking_date=booking_date,
+            start_time=start_time,
+            end_time=end_time,
+            ttl=ttl,
+            reservation_id=reservation_id
+        )
+        redis_circuit_open = False  # Success! Close the circuit.
+        return success
+    except redis.RedisError as e:
+        print(f"Redis error, opening circuit: {e}")
+        redis_circuit_open = True
+        raise e
 
 
 def acquire_lease(spot_id, user_id, parking_lot_id, booking_date, start_time, end_time, ttl=240, reservation_id=None):
@@ -94,9 +126,37 @@ def confirm_booking(reservation_id, spot_id, user_id, booking_data, idempotency_
             current_app.logger.error(f"❌ Idempotency check failed: {str(e)}")
             idempotency_key = None
 
+    lease_key = f"spot_lease:{spot_id}_{booking_data['booking_date']}"
+
+    # ✅ VALIDATE existing lease instead of re-acquiring
+    current_app.logger.info(f"🔍 Validating existing lease: {lease_key}")
+    current_lease = redis_client.get(lease_key)
+
+    if current_lease is None:
+        current_app.logger.error(f"❌ Lease not found or expired: {lease_key}")
+        result = {"status": "error", "message": "Lease expired or not found"}
+        if idempotency_key:
+            store_idempotency_result(idempotency_key, result)
+        return result, 409
+
+    if isinstance(current_lease, bytes):
+        current_lease = current_lease.decode('utf-8')
+
+    current_app.logger.info(f"🔍 Lease validation - current: {current_lease}, expected: {reservation_id}")
+
+    if current_lease != reservation_id:
+        current_app.logger.error(f"❌ Lease validation failed - mismatch")
+        result = {"status": "error", "message": "Lease validation failed - spot taken by another user"}
+        if idempotency_key:
+            store_idempotency_result(idempotency_key, result)
+        return result, 409
+
+    # ✅ Lease validation successful - proceed with booking
+    current_app.logger.info(f"✅ Lease validation successful for reservation: {reservation_id}")
+
     try:
         with db.session.begin_nested():
-            # 🎯 FIX: ATOMIC LOCKING - Get spot with FOR UPDATE first to prevent race conditions
+            # 🎯 ATOMIC LOCKING - Get spot with FOR UPDATE first to prevent race conditions
             current_app.logger.info(f"🔒 Acquiring database lock for spot: {spot_id}")
             spot = db.session.execute(
                 select(ParkingSpot)
@@ -105,12 +165,32 @@ def confirm_booking(reservation_id, spot_id, user_id, booking_data, idempotency_
             ).scalar_one()
             current_app.logger.info(f"✅ Database lock acquired for spot: {spot_id}")
 
+            # 🎯 CRITICAL: Check Redis lease consistency again while holding the database lock
+            current_lease_after_lock = redis_client.get(lease_key)
+            if current_lease_after_lock and isinstance(current_lease_after_lock, bytes):
+                current_lease_after_lock = current_lease_after_lock.decode('utf-8')
+
+            current_app.logger.info(
+                f"🔍 Lease consistency check after lock - key: {lease_key}, current: {current_lease_after_lock}, expected: {reservation_id}")
+
+            if not current_lease_after_lock or current_lease_after_lock != reservation_id:
+                current_app.logger.warning(f"⚠️ Lease lost after acquiring lock, attempting to renew...")
+                success = redis_renew_lease(redis_client, lease_key, reservation_id, 240)
+                if not success:
+                    current_app.logger.error(f"❌ Lease lost and could not be renewed")
+                    result = {"status": "error", "message": "Lease lost and could not be renewed"}
+                    if idempotency_key:
+                        store_idempotency_result(idempotency_key, result)
+                    return result, 409
+                else:
+                    current_app.logger.info("✅ Lease successfully renewed")
+
             # Validate lease from Redis metadata
-            current_app.logger.info(f"🔍 Validating lease: {reservation_id}")
+            current_app.logger.info(f"🔍 Validating lease metadata: {reservation_id}")
             lease_data = redis_client.hgetall(f"lease_data:{reservation_id}")
             if not lease_data:
-                current_app.logger.error(f"❌ Lease not found: {reservation_id}")
-                result = {"status": "error", "message": "Lease not found"}
+                current_app.logger.error(f"❌ Lease metadata not found: {reservation_id}")
+                result = {"status": "error", "message": "Lease metadata not found"}
                 if idempotency_key:
                     store_idempotency_result(idempotency_key, result)
                 return result, 409
@@ -122,39 +202,17 @@ def confirm_booking(reservation_id, spot_id, user_id, booking_data, idempotency_
                 'spot_id', '')
 
             current_app.logger.info(
-                f"🔍 Lease validation - user: {lease_user_id} vs {user_id}, spot: {lease_spot_id} vs {spot_id}")
+                f"🔍 Lease metadata validation - user: {lease_user_id} vs {user_id}, spot: {lease_spot_id} vs {spot_id}")
 
             # Validate lease ownership
             if (lease_user_id != str(user_id) or lease_spot_id != str(spot_id)):
-                current_app.logger.error(f"❌ Lease validation failed - mismatch")
-                result = {"status": "error", "message": "Lease validation failed"}
+                current_app.logger.error(f"❌ Lease metadata validation failed - mismatch")
+                result = {"status": "error", "message": "Lease metadata validation failed"}
                 if idempotency_key:
                     store_idempotency_result(idempotency_key, result)
                 return result, 409
 
-            # Check Redis lease consistency
-            booking_date = booking_data['booking_date']
-            lease_key = f"spot_lease:{spot_id}_{booking_date}"
-            current_lease = redis_client.get(lease_key)
-            if current_lease and isinstance(current_lease, bytes):
-                current_lease = current_lease.decode('utf-8')
-
-            current_app.logger.info(
-                f"🔍 Lease consistency check - key: {lease_key}, current: {current_lease}, expected: {reservation_id}")
-
-            if not current_lease or current_lease != reservation_id:
-                current_app.logger.warning(f"⚠️ Lease lost, attempting to renew: {lease_key}, {reservation_id}")
-                success = redis_acquire_lease(redis_client, lease_key, reservation_id, 240)
-                if not success:
-                    current_app.logger.error(f"❌ Lease lost and could not be renewed")
-                    result = {"status": "error", "message": "Lease lost and could not be renewed"}
-                    if idempotency_key:
-                        store_idempotency_result(idempotency_key, result)
-                    return result, 409
-                else:
-                    current_app.logger.info("✅ Lease successfully renewed")
-
-            # 🎯 FIX: ATOMIC AVAILABILITY CHECK - Check availability while holding the lock
+            # 🎯 ATOMIC AVAILABILITY CHECK - Check availability while holding the lock
             start_time = datetime.strptime(booking_data['start_time'], '%H:%M').time()
             end_time = datetime.strptime(booking_data['end_time'], '%H:%M').time()
 
@@ -194,6 +252,7 @@ def confirm_booking(reservation_id, spot_id, user_id, booking_data, idempotency_
 
         if idempotency_key:
             store_idempotency_result(idempotency_key, result)
+
         return result, 200
 
     except Exception as e:
@@ -203,6 +262,8 @@ def confirm_booking(reservation_id, spot_id, user_id, booking_data, idempotency_
         if idempotency_key:
             store_idempotency_result(idempotency_key, result)
         return result, 500
+
+
 
 
 def create_booking_from_data(spot, user_id, booking_data):

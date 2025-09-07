@@ -1,6 +1,8 @@
 import json
 import redis
 
+from config import redis_client
+
 
 def redis_health_check(redis_client):
     try:
@@ -57,7 +59,13 @@ def redis_acquire_lease(redis_client, key, value, ttl):
         print(f"   Redis SET {key} {value} NX EX {ttl}")
         result = lease_acquire_script(keys=[key], args=[value, ttl])
         print(f"   Redis SET result: {result}")
-        return result is not None
+        if result is None:
+            return False  # Lease already exists
+        elif result == b'OK' or result == 'OK':
+            return True  # Lease acquired successfully
+        else:
+            print(f"❌ Unexpected Redis response: {result}")
+            return False
     except redis.RedisError as e:
         print(f"❌ Redis lease acquire error for key {key}: {str(e)}")
         return False
