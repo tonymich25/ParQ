@@ -2,25 +2,31 @@ import uuid
 from sqlalchemy import select, update
 from flask import current_app
 from datetime import datetime, timedelta
-from config import redis_client, db, ParkingSpot, Booking  # REMOVE SpotLease
+from config import redis_client, db, ParkingSpot, Booking, socketio  # REMOVE SpotLease
 from booking.redis_utils import redis_renew_lease, redis_delete_lease, redis_delete_lease, redis_acquire_lease
 from booking.idempotency import check_idempotency, store_idempotency_result
 from zoneinfo import ZoneInfo
 from booking.utils import is_spot_available, calculate_price, emit_to_relevant_rooms_about_booking
 import redis
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from booking.db_utils import is_spot_available_in_db
 
-redis_circuit_open = False
+
 @retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=1, max=4),
     retry=retry_if_exception_type(redis.RedisError),
-    reraise=True  # This ensures the exception is re-raised after retries
+    reraise=True
 )
-def acquire_lease_safe(spot_id, user_id, parking_lot_id, booking_date, start_time, end_time, ttl=240, reservation_id=None):
-    """Try to acquire a lease with retries. If it fails, open the circuit."""
-    global redis_circuit_open
+def acquire_lease_safe(spot_id, user_id, parking_lot_id, booking_date, start_time, end_time, ttl=240,
+                       reservation_id=None):
+    """Try to acquire a lease with retries."""
+
+    # 🎯 USE YOUR RESILIENTREDISMANAGER'S BUILT-IN CIRCUIT BREAKER
+    redis_available = socketio.server.manager.redis_available
+
+    if not redis_available:
+        raise redis.RedisError("Redis circuit open - using fallback mode")
+
     try:
         # ✅ Use the high-level acquire_lease function
         success = acquire_lease(
@@ -33,11 +39,9 @@ def acquire_lease_safe(spot_id, user_id, parking_lot_id, booking_date, start_tim
             ttl=ttl,
             reservation_id=reservation_id
         )
-        redis_circuit_open = False  # Success! Close the circuit.
         return success
     except redis.RedisError as e:
-        print(f"Redis error, opening circuit: {e}")
-        redis_circuit_open = True
+        current_app.logger.warning(f"🔴 Redis error: {e}")
         raise e
 
 

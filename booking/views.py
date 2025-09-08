@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import qrcode
 import redis
@@ -12,14 +12,14 @@ from flask_socketio import join_room, emit
 from flask_socketio import leave_room
 
 from booking import booking_service
-from booking.booking_service import acquire_lease, confirm_booking, redis_circuit_open, acquire_lease_safe
-from booking.db_utils import is_spot_available_in_db
+from booking.booking_service import acquire_lease, confirm_booking,  acquire_lease_safe
 from booking.forms import BookingForm
 from booking.redis_utils import redis_sadd, redis_srem, redis_smembers, redis_hget, redis_hset, redis_delete, \
     redis_hdel, \
     redis_keys, redis_safe_release_lease
 from booking.utils import emit_to_relevant_rooms_about_booking, calculate_price, get_pending_booking, store_pending_booking, delete_pending_booking
-from config import City, db, ParkingLot, Booking, ParkingSpot, app, socketio, redis_client, secrets, PendingBooking
+from config import City, db, ParkingLot, Booking, ParkingSpot, app, socketio, redis_client, secrets, PendingBooking, \
+    ActiveConnection
 
 booking_bp = Blueprint('booking_bp', __name__, template_folder='templates')
 
@@ -328,16 +328,24 @@ def book_spot(data):
         current_app.logger.info(f"🎯 book_spot event received: {data}")
         current_app.logger.info(f"🔌 Circuit breaker status: {booking_service.redis_circuit_open}")
 
-        # Try Redis-based booking first
-        try:
-            return process_redis_booking(data, request.sid)
-        except (redis.exceptions.ConnectionError, Exception) as e:
-            if isinstance(e, redis.exceptions.ConnectionError):
-                # Set circuit breaker and fallback to direct booking
-                booking_service.redis_circuit_open = True
-                current_app.logger.warning("🔴 Redis connection failed - opening circuit breaker")
+        # Check Redis health
+        redis_available = socketio.server.manager.redis_available
 
-            current_app.logger.warning(f"🔄 Redis booking failed, falling back to direct: {str(e)}")
+        if redis_available:
+            # Try Redis-based booking first
+            try:
+                return process_redis_booking(data, request.sid)
+            except (redis.exceptions.ConnectionError, Exception) as e:
+                if isinstance(e, redis.exceptions.ConnectionError):
+                    # Set circuit breaker and fallback to direct booking
+                    booking_service.redis_circuit_open = True
+                    current_app.logger.warning("🔴 Redis connection failed - opening circuit breaker")
+
+                current_app.logger.warning(f"🔄 Redis booking failed, falling back to direct: {str(e)}")
+                return process_direct_booking(data, request.sid)
+        else:
+            # Redis is down, use direct booking
+            current_app.logger.info("🔄 Redis unavailable - using direct booking")
             return process_direct_booking(data, request.sid)
 
     except Exception as e:
@@ -391,23 +399,35 @@ def process_redis_booking(data, sid):
             datetime.strptime(end_time_str, "%H:%M").time()
         )
 
-        # Create Stripe session
-        checkout_url = create_stripe_session(
-            data, start_time_str, end_time_str, spot, reservation_id
+        # 🎯 BROADCAST TO OTHER INSTANCES (OUTSIDE TRANSACTION)
+        from booking.cross_instance_manager import broadcast_spot_update
+        broadcast_spot_update(
+            spot,
+            data.get('bookingDate'),
+            False,  # available=False
+            datetime.strptime(start_time_str, "%H:%M").time(),
+            datetime.strptime(end_time_str, "%H:%M").time()
         )
 
-        if not checkout_url:
-            # Cleanup on failure
-            lease_key = f"spot_lease:{spot.id}_{data.get('bookingDate')}"
-            redis_safe_release_lease(redis_client, lease_key, reservation_id)
-            emit_to_relevant_rooms_about_booking(
-                spot, data.get('bookingDate'), True, False
+        # 🎯 MOVE TRANSACTION TO ONLY COVER STRIPE SESSION CREATION
+        with db.session.begin_nested():
+            # Create Stripe session
+            checkout_url = create_stripe_session(
+                data, start_time_str, end_time_str, spot, reservation_id
             )
-            emit('booking_failed', {'reason': 'Payment system error'}, room=sid)
-            return
 
-        # Success
-        emit('payment_redirect', {'url': checkout_url}, room=sid)
+            if not checkout_url:
+                # Cleanup on failure
+                lease_key = f"spot_lease:{spot.id}_{data.get('bookingDate')}"
+                redis_safe_release_lease(redis_client, lease_key, reservation_id)
+                emit_to_relevant_rooms_about_booking(
+                    spot, data.get('bookingDate'), True, False
+                )
+                emit('booking_failed', {'reason': 'Payment system error'}, room=sid)
+                return
+
+            # Success
+            emit('payment_redirect', {'url': checkout_url}, room=sid)
 
     except redis.exceptions.ConnectionError:
         # Re-raise to trigger fallback
@@ -415,6 +435,7 @@ def process_redis_booking(data, sid):
     except Exception as e:
         current_app.logger.error(f"❌ Redis booking error: {str(e)}")
         emit('booking_failed', {'reason': str(e)}, room=sid)
+
 
 @socketio.on('subscribe')
 def handle_subscribe(data):
@@ -424,15 +445,8 @@ def handle_subscribe(data):
         start_time = data.get('startTime', '00:00')
         end_time = data.get('endTime', '23:59')
 
-        # 🎯 FIX: Better validation with proper error messages
-        if not parking_lot_id:
-            print(f"Invalid subscription from {request.sid}: missing parkingLotId")
-            emit('subscription_error', {'message': 'Missing parkingLotId'})
-            return
-
-        if not booking_date:
-            print(f"Invalid subscription from {request.sid}: missing bookingDate")
-            emit('subscription_error', {'message': 'Missing bookingDate'})
+        if not parking_lot_id or not booking_date:
+            emit('subscription_error', {'message': 'Missing required fields'})
             return
 
         new_room_name = f"lot_{parking_lot_id}_{booking_date}"
@@ -450,21 +464,25 @@ def handle_subscribe(data):
         except (json.JSONDecodeError, TypeError):
             current_rooms = []
 
-        # Leave all existing parking lot rooms
-        for room in current_rooms[:]:  # Create a copy to avoid modification during iteration
+        # Leave all existing parking lot rooms for ANY date
+        rooms_to_leave = []
+        for room in current_rooms[:]:
             if isinstance(room, str) and room.startswith('lot_'):
-                leave_room(room)
-                redis_srem(redis_client, f"active_rooms:{room}", request.sid)
-                if not redis_smembers(redis_client, f"active_rooms:{room}"):
-                    redis_delete(redis_client, f"active_rooms:{room}")
-                current_rooms.remove(room)
+                room_parts = room.split('_')
+                if len(room_parts) >= 2 and room_parts[1] == str(parking_lot_id):
+                    rooms_to_leave.append(room)
+                    leave_room(room)
+                    redis_srem(redis_client, f"active_rooms:{room}", request.sid)
+                    if not redis_smembers(redis_client, f"active_rooms:{room}"):
+                        redis_delete(redis_client, f"active_rooms:{room}")
+                    current_rooms.remove(room)
 
         # Join new room
         join_room(new_room_name)
         redis_sadd(redis_client, f"active_rooms:{new_room_name}", request.sid)
         current_rooms.append(new_room_name)
 
-        # Update connection data
+        # Update connection data with time info
         conn_data.update({
             'parkingLotId': str(parking_lot_id),
             'bookingDate': booking_date,
@@ -473,12 +491,35 @@ def handle_subscribe(data):
             'rooms': json.dumps(current_rooms)
         })
 
+        # Store in Redis
         redis_hset(redis_client, "active_connections", request.sid, conn_data)
 
-        print(f"Client {request.sid} subscribed to {new_room_name} with times: {start_time}-{end_time}")
+        # 🎯 DUAL WRITE: Store in database fallback
+        fallback_conn = ActiveConnection.query.filter_by(socket_id=request.sid).first()
+        if fallback_conn:
+            # Refresh TTL on existing connection
+            fallback_conn.room_name = new_room_name
+            fallback_conn.start_time = start_time
+            fallback_conn.end_time = end_time
+            fallback_conn.expires_at = datetime.now() + timedelta(minutes=5)
+        else:
+            # Create new connection with TTL
+            fallback_conn = ActiveConnection(
+                socket_id=request.sid,
+                user_id=current_user.get_id(),
+                room_name=new_room_name,
+                start_time=start_time,
+                end_time=end_time
+            )
+            db.session.add(fallback_conn)
+
+        db.session.commit()
+
+        app.logger.info(f"✅ Client {request.sid} subscribed to {new_room_name}")
 
     except Exception as e:
-        print(f"Subscription error for {request.sid}: {str(e)}")
+        db.session.rollback()
+        app.logger.error(f"❌ Subscription error for {request.sid}: {str(e)}")
         emit('subscription_error', {'message': 'Internal server error'})
 
 
@@ -553,11 +594,15 @@ def check_spot_availability():
         endTime_str = data.get('endTime')
         bookingDate = data.get('bookingDate')
 
+        # Check Redis health
+        redis_available = socketio.server.manager.redis_available
+
         # Convert times
         startTime = datetime.strptime(startTime_str, "%H:%M").time()
         endTime = datetime.strptime(endTime_str, "%H:%M").time()
 
-        current_app.logger.info(f"🔍 DEBUG: Checking lot {parkingLotId}, date {bookingDate}, time {startTime}-{endTime}")
+        current_app.logger.info(
+            f"🔍 DEBUG: Checking lot {parkingLotId}, date {bookingDate}, time {startTime}-{endTime}, Redis: {'✅' if redis_available else '❌'}")
 
         parkingLot = ParkingLot.query.get(parkingLotId)
         if not parkingLot:
@@ -571,105 +616,115 @@ def check_spot_availability():
         conflicting_bookings = Booking.query.filter(
             Booking.parking_lot_id == parkingLotId,
             Booking.bookingDate == bookingDate,
-            Booking.startTime < endTime,   # CORRECT: Booking starts before our end time
-            Booking.endTime > startTime    # CORRECT: Booking ends after our start time
+            Booking.startTime < endTime,  # CORRECT: Booking starts before our end time
+            Booking.endTime > startTime  # CORRECT: Booking ends after our start time
         ).with_entities(Booking.spot_id).all()
 
         booked_spot_ids = {b[0] for b in conflicting_bookings}
         current_app.logger.info(f"🔍 Booked spot IDs: {booked_spot_ids}")
 
-        # 🎯 FIX: Debug Redis key lookup
-        lease_pattern = f"spot_lease:*_{bookingDate}"
-        current_app.logger.info(f"🔍 Looking for lease pattern: {lease_pattern}")
-
-        # Use SCAN instead of KEYS for better performance
         leased_spot_ids = set()
         lease_keys_found = []
-        cursor = 0
-        try:
-            while True:
-                cursor, keys = redis_client.scan(cursor=cursor, match=lease_pattern, count=100)
-                current_app.logger.info(f"🔍 SCAN result - cursor: {cursor}, keys: {keys}")
 
-                for lease_key in keys:
-                    if isinstance(lease_key, bytes):
-                        lease_key = lease_key.decode('utf-8')
+        if redis_available:
+            # 🎯 FIX: Debug Redis key lookup
+            lease_pattern = f"spot_lease:*_{bookingDate}"
+            current_app.logger.info(f"🔍 Looking for lease pattern: {lease_pattern}")
 
-                    lease_keys_found.append(lease_key)
-                    current_app.logger.info(f"🔍 Processing lease key: {lease_key}")
+            # Use SCAN instead of KEYS for better performance
+            cursor = 0
+            try:
+                while True:
+                    cursor, keys = redis_client.scan(cursor=cursor, match=lease_pattern, count=100)
+                    current_app.logger.info(f"🔍 SCAN result - cursor: {cursor}, keys: {keys}")
 
-                    try:
-                        # Extract spot_id from key format: "spot_lease:{spot_id}_{date}"
-                        key_parts = lease_key.split(':')
-                        if len(key_parts) < 2:
+                    for lease_key in keys:
+                        if isinstance(lease_key, bytes):
+                            lease_key = lease_key.decode('utf-8')
+
+                        lease_keys_found.append(lease_key)
+                        current_app.logger.info(f"🔍 Processing lease key: {lease_key}")
+
+                        try:
+                            # Extract spot_id from key format: "spot_lease:{spot_id}_{date}"
+                            key_parts = lease_key.split(':')
+                            if len(key_parts) < 2:
+                                continue
+
+                            spot_date_parts = key_parts[1].split('_')
+                            if len(spot_date_parts) < 2:
+                                continue
+
+                            spot_id = spot_date_parts[0]
+
+                            reservation_id = redis_client.get(lease_key)
+                            if reservation_id and isinstance(reservation_id, bytes):
+                                reservation_id = reservation_id.decode('utf-8')
+
+                            current_app.logger.info(
+                                f"🔍 Lease {lease_key} -> spot {spot_id}, reservation {reservation_id}")
+
+                            if reservation_id:
+                                # Get lease metadata to check time overlap
+                                lease_data = redis_client.hgetall(f"lease_data:{reservation_id}")
+                                current_app.logger.info(f"🔍 Lease data: {lease_data}")
+
+                                if lease_data:
+                                    # Handle Redis bytes data
+                                    lease_start_str = lease_data.get(b'start_time',
+                                                                     b'').decode() if b'start_time' in lease_data else lease_data.get(
+                                        'start_time', '')
+                                    lease_end_str = lease_data.get(b'end_time',
+                                                                   b'').decode() if b'end_time' in lease_data else lease_data.get(
+                                        'end_time', '')
+
+                                    current_app.logger.info(
+                                        f"🔍 Lease times - start: {lease_start_str}, end: {lease_end_str}")
+
+                                    if lease_start_str and lease_end_str:
+                                        lease_start = datetime.strptime(lease_start_str, "%H:%M").time()
+                                        lease_end = datetime.strptime(lease_end_str, "%H:%M").time()
+
+                                        # 🎯 FIX: PROPER TIME OVERLAP LOGIC
+                                        # Convert to datetime for proper comparison (handle edge cases)
+                                        base_date = datetime.today().date()
+                                        lease_start_dt = datetime.combine(base_date, lease_start)
+                                        lease_end_dt = datetime.combine(base_date, lease_end)
+                                        requested_start_dt = datetime.combine(base_date, startTime)
+                                        requested_end_dt = datetime.combine(base_date, endTime)
+
+                                        # Check if time ranges overlap (exclusive of endpoints)
+                                        time_overlap = (
+                                                (requested_start_dt < lease_end_dt) and
+                                                (requested_end_dt > lease_start_dt)
+                                        )
+
+                                        app.logger.info(
+                                            f"🔍 Time overlap check - requested: {startTime}-{endTime}, lease: {lease_start}-{lease_end}, overlap: {time_overlap}")
+
+                                        if time_overlap:
+                                            leased_spot_ids.add(spot_id)
+                                            current_app.logger.info(
+                                                f"🔍 Added spot {spot_id} to leased spots due to time overlap")
+                        except (IndexError, ValueError, TypeError) as e:
+                            current_app.logger.error(f"❌ Error processing lease key {lease_key}: {e}")
                             continue
 
-                        spot_date_parts = key_parts[1].split('_')
-                        if len(spot_date_parts) < 2:
-                            continue
+                    if cursor == 0:
+                        break
 
-                        spot_id = spot_date_parts[0]
+            except redis.exceptions.ConnectionError:
+                # ✅ CIRCUIT BREAKER ACTIVATED: Redis is down
+                current_app.logger.warning("✅ Circuit Breaker: Redis down. Using DB results only.")
+                # We continue with leased_spot_ids as an empty set - no leased spots will be considered
+                leased_spot_ids = set()
 
-                        reservation_id = redis_client.get(lease_key)
-                        if reservation_id and isinstance(reservation_id, bytes):
-                            reservation_id = reservation_id.decode('utf-8')
-
-                        current_app.logger.info(f"🔍 Lease {lease_key} -> spot {spot_id}, reservation {reservation_id}")
-
-                        if reservation_id:
-                            # Get lease metadata to check time overlap
-                            lease_data = redis_client.hgetall(f"lease_data:{reservation_id}")
-                            current_app.logger.info(f"🔍 Lease data: {lease_data}")
-
-                            if lease_data:
-                                # Handle Redis bytes data
-                                lease_start_str = lease_data.get(b'start_time', b'').decode() if b'start_time' in lease_data else lease_data.get('start_time', '')
-                                lease_end_str = lease_data.get(b'end_time', b'').decode() if b'end_time' in lease_data else lease_data.get('end_time', '')
-
-                                current_app.logger.info(f"🔍 Lease times - start: {lease_start_str}, end: {lease_end_str}")
-
-                                if lease_start_str and lease_end_str:
-                                    lease_start = datetime.strptime(lease_start_str, "%H:%M").time()
-                                    lease_end = datetime.strptime(lease_end_str, "%H:%M").time()
-
-                                    # 🎯 FIX: PROPER TIME OVERLAP LOGIC
-                                    # Convert to datetime for proper comparison (handle edge cases)
-                                    base_date = datetime.today().date()
-                                    lease_start_dt = datetime.combine(base_date, lease_start)
-                                    lease_end_dt = datetime.combine(base_date, lease_end)
-                                    requested_start_dt = datetime.combine(base_date, startTime)
-                                    requested_end_dt = datetime.combine(base_date, endTime)
-
-                                    # Check if time ranges overlap (exclusive of endpoints)
-                                    time_overlap = (
-                                        (requested_start_dt < lease_end_dt) and
-                                        (requested_end_dt > lease_start_dt)
-                                    )
-
-                                    app.logger.info(f"🔍 Time overlap check - requested: {startTime}-{endTime}, lease: {lease_start}-{lease_end}, overlap: {time_overlap}")
-
-                                    if time_overlap:
-                                        leased_spot_ids.add(spot_id)
-                                        current_app.logger.info(f"🔍 Added spot {spot_id} to leased spots due to time overlap")
-                    except (IndexError, ValueError, TypeError) as e:
-                        current_app.logger.error(f"❌ Error processing lease key {lease_key}: {e}")
-                        continue
-
-                if cursor == 0:
-                    break
-
-        except redis.exceptions.ConnectionError:
-
-            # ✅ CIRCUIT BREAKER ACTIVATED: Redis is down
-            current_app.logger.warning("✅ Circuit Breaker: Redis down. Using DB results only.")
-            # We continue with leased_spot_ids as an empty set - no leased spots will be considered
-            leased_spot_ids = set()
-
-        except Exception as e:
-            # For any other Redis errors, also use the fallback
-            current_app.logger.error(f"❌ Redis error (using fallback): {e}")
-            leased_spot_ids = set()
-
+            except Exception as e:
+                # For any other Redis errors, also use the fallback
+                current_app.logger.error(f"❌ Redis error (using fallback): {e}")
+                leased_spot_ids = set()
+        else:
+            current_app.logger.info("🔄 Using fallback mode - skipping Redis lease checks")
 
         current_app.logger.info(f"🔍 Leased spot IDs: {leased_spot_ids}")
         current_app.logger.info(f"🔍 All lease keys found: {lease_keys_found}")
@@ -684,13 +739,11 @@ def check_spot_availability():
         pending_spot_ids = {p[0] for p in pending_conflicts}
         current_app.logger.info(f"🔍 Pending booking spot IDs: {pending_spot_ids}")
 
-
-
         spots_data = []
         for spot in allSpots:
             is_available = (spot.id not in booked_spot_ids and
-                           str(spot.id) not in leased_spot_ids and
-                           spot.id not in pending_spot_ids)
+                            str(spot.id) not in leased_spot_ids and
+                            spot.id not in pending_spot_ids)
 
             current_app.logger.info(
                 f"🔍 Spot {spot.id} - available: {is_available} (booked: {spot.id in booked_spot_ids}, leased: {str(spot.id) in leased_spot_ids}, pending: {spot.id in pending_spot_ids})")
@@ -707,7 +760,8 @@ def check_spot_availability():
             'spots': spots_data,
             'booked_count': len(booked_spot_ids),
             'leased_count': len(leased_spot_ids),
-            'lease_keys_found': lease_keys_found
+            'lease_keys_found': lease_keys_found,
+            'redis_available': redis_available  # Add this to help frontend debugging
         })
 
     except Exception as e:
@@ -750,7 +804,7 @@ def debug_redis():
 
 
 def process_direct_booking(data, sid):
-    """Handle direct booking when Redis is down"""
+    """Handle direct booking when Redis is down - WITH WebSocket updates"""
     try:
         current_app.logger.info("🎯 Processing direct booking fallback")
 
@@ -767,7 +821,26 @@ def process_direct_booking(data, sid):
         end_time = datetime.strptime(end_time_str, "%H:%M").time()
         booking_date = datetime.strptime(data.get('bookingDate'), '%Y-%m-%d').date()
 
-        # 🎯 CRITICAL: Check for conflicts BEFORE creating pending booking
+        # 🎯 CRITICAL: EMIT SPOT UNAVAILABLE FIRST
+        emit_to_relevant_rooms_about_booking(
+            spot,
+            data.get('bookingDate'),
+            False,  # available=False
+            False,  # don't return confirmation
+            start_time,  # 🎯 PASS ACTUAL TIME OBJECTS
+            end_time  # 🎯 PASS ACTUAL TIME OBJECTS
+        )
+
+        from booking.cross_instance_manager import broadcast_spot_update
+        broadcast_spot_update(
+            spot,
+            data.get('bookingDate'),
+            False,  # available=False
+            start_time,  # 🎯 PASS ACTUAL TIME OBJECTS
+            end_time  # 🎯 PASS ACTUAL TIME OBJECTS
+        )
+
+        # 🎯 CRITICAL: Check for conflicts AFTER emitting (to prevent race conditions)
         with db.session.begin_nested():
             # 1. Check for conflicting CONFIRMED bookings
             conflict_count = Booking.query.filter(
@@ -780,6 +853,13 @@ def process_direct_booking(data, sid):
 
             if conflict_count > 0:
                 current_app.logger.error(f"❌ Spot {data.get('spotId')} already booked")
+                # EMIT SPOT AVAILABLE AGAIN (since booking failed)
+                emit_to_relevant_rooms_about_booking(
+                    spot,
+                    data.get('bookingDate'),
+                    True,  # available=True
+                    False  # don't return confirmation
+                )
                 emit('booking_failed', {'reason': 'This spot was just booked by someone else'})
                 return
 
@@ -795,6 +875,13 @@ def process_direct_booking(data, sid):
             if conflicting_pending:
                 current_app.logger.warning(
                     f"❌ Spot {data.get('spotId')} has pending booking: {conflicting_pending.reservation_id}")
+                # EMIT SPOT AVAILABLE AGAIN (since booking failed)
+                emit_to_relevant_rooms_about_booking(
+                    spot,
+                    data.get('bookingDate'),
+                    True,  # available=True
+                    False  # don't return confirmation
+                )
                 emit('booking_failed',
                      {'reason': 'This spot is currently being booked by someone else. Please try again in a moment.'})
                 return
@@ -816,6 +903,16 @@ def process_direct_booking(data, sid):
         )
 
         if not storage_success:
+            # EMIT SPOT AVAILABLE AGAIN (since booking failed)
+            success = emit_to_relevant_rooms_about_booking(
+                spot,
+                data.get('bookingDate'),
+                False,  # available=False
+                False  # don't return confirmation
+            )
+
+            if not success:
+                current_app.logger.warning("⚠️ Cross-instance broadcast failed - only updating local instance")
             emit('booking_failed', {'reason': 'Failed to process booking'})
             return
 
@@ -829,6 +926,16 @@ def process_direct_booking(data, sid):
         )
 
         if not checkout_url:
+            # EMIT SPOT AVAILABLE AGAIN (since booking failed)
+            success = emit_to_relevant_rooms_about_booking(
+                spot,
+                data.get('bookingDate'),
+                False,  # available=False
+                False  # don't return confirmation
+            )
+
+            if not success:
+                current_app.logger.warning("⚠️ Cross-instance broadcast failed - only updating local instance")
             delete_pending_booking(reservation_id)
             emit('booking_failed', {'reason': 'Payment system error'})
             return
@@ -837,6 +944,14 @@ def process_direct_booking(data, sid):
 
     except Exception as e:
         current_app.logger.error(f"❌ Direct booking error: {str(e)}")
+        # EMIT SPOT AVAILABLE AGAIN (since booking failed)
+        if 'spot' in locals():
+            emit_to_relevant_rooms_about_booking(
+                spot,
+                data.get('bookingDate'),
+                True,  # available=True
+                False  # don't return confirmation
+            )
         emit('booking_failed', {'reason': 'Booking failed. Please try again.'})
 
 
@@ -911,6 +1026,12 @@ def payment_success_direct():
         start_time = session.metadata.get('start_time')
         end_time = session.metadata.get('end_time')
 
+        spot = ParkingSpot.query.get(spot_id)
+        if not spot:
+            current_app.logger.error(f"❌ Spot not found: {spot_id}")
+            flash("Invalid spot. Please try again.", "error")
+            return redirect(url_for('booking_bp.booking_form'))
+
         # Convert times to proper objects
         start_time_obj = datetime.strptime(start_time, '%H:%M').time()
         end_time_obj = datetime.strptime(end_time, '%H:%M').time()
@@ -972,7 +1093,7 @@ def payment_success_direct():
                 bookingDate=booking_date_obj,
                 startTime=start_time_obj,
                 endTime=end_time_obj,
-                amount=float(session.amount_total) / 100  # Convert from cents
+                amount=float(session.amount_total) # Convert from cents
             )
 
             db.session.add(booking)
@@ -987,6 +1108,13 @@ def payment_success_direct():
         # Commit the transaction
         db.session.commit()
 
+        emit_to_relevant_rooms_about_booking(
+            spot,
+            booking_date,
+            False,  # available=False
+            False  # don't return confirmation
+        )
+
         current_app.logger.info(f"🎉 Direct booking completed successfully! Booking ID: {booking.id}")
         flash("Your booking and payment were successful!", "success")
         return redirect(url_for('dashboard.dashboard'))
@@ -994,6 +1122,16 @@ def payment_success_direct():
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"❌ Direct payment success error: {str(e)}", exc_info=True)
+
+        if spot:
+            booking_date = session.metadata.get('booking_date') if 'session' in locals() else None
+            if booking_date:
+                emit_to_relevant_rooms_about_booking(
+                    spot,
+                    booking_date,
+                    True,  # available=True
+                    False  # don't return confirmation
+                )
 
         # Issue refund on error
         try:
@@ -1004,3 +1142,4 @@ def payment_success_direct():
 
         flash("Payment received! If your booking doesn't appear, contact support for refund.", "warning")
         return redirect(url_for('dashboard.dashboard'))
+

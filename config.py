@@ -1,9 +1,9 @@
 import os
 import stripe
 import redis
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from infisical_sdk import InfisicalSDKClient
-from flask import Flask, url_for, render_template
+from flask import Flask, url_for, render_template, current_app
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.menu import MenuLink
@@ -12,7 +12,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
-
 from booking.resilient_redis_manager import ResilientRedisManager
 
 app = Flask(__name__)
@@ -247,6 +246,30 @@ class PendingBooking(db.Model):
         db.Index('idx_pending_user_id', 'user_id'),
     )
 
+
+class ActiveConnection(db.Model):
+    """Stores connection info for Redis fallback"""
+    __tablename__ = 'active_connections_fallback'
+
+    id = db.Column(db.Integer, primary_key=True)
+    socket_id = db.Column(db.String(255), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    room_name = db.Column(db.String(255), nullable=False)  # lot_1_2025-09-15
+    start_time = db.Column(db.String(10), nullable=False)  # HH:MM
+    end_time = db.Column(db.String(10), nullable=False)  # HH:MM
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)  # TTL for auto-cleanup
+
+    __table_args__ = (
+        db.Index('idx_ac_socket_id', 'socket_id'),
+        db.Index('idx_ac_room_name', 'room_name'),
+        db.Index('idx_ac_expires_at', 'expires_at'),
+    )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.expires_at = datetime.now() + timedelta(minutes=5)
+
 class MainIndexLink(MenuLink):
     def get_url(self):
         return url_for('index')
@@ -289,14 +312,23 @@ app.register_blueprint(booking_bp)
 
 
 def startup():
-    """
-    Initializes background tasks when an application worker starts.
-    This is the modern replacement for the deprecated `before_first_request`.
-    """
-    from booking.redis_pubsub import start_redis_expiration_listener
-    start_redis_expiration_listener()
+    try:
+        from booking.redis_pubsub import start_redis_expiration_listener
+        from booking.cross_instance_manager import init_cross_instance_messaging
 
-startup()
+        # Initialize cross-instance messaging
+        init_cross_instance_messaging()
+
+        # Try to start Redis listener (may fail if Redis is down)
+        try:
+            start_redis_expiration_listener()
+        except Exception as e:
+            app.logger.warning(f"⚠️ Redis listener not started: {str(e)}")
+
+        app.logger.info("✅ Application initialization complete")
+
+    except Exception as e:
+        app.logger.error(f"❌ Application initialization failed: {str(e)}")
 
 
 
@@ -318,3 +350,5 @@ def with_redis_circuit(func):
             raise Exception("Redis unavailable")
 
     return wrapper
+
+startup()

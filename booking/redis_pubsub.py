@@ -19,12 +19,19 @@ def start_redis_expiration_listener():
                 try:
                     redis_client.config_set('notify-keyspace-events', 'Ex')
                     app.logger.info("✅ Redis keyspace notifications enabled")
+                except redis.exceptions.ConnectionError:
+                    app.logger.warning("⚠️ Redis unavailable - expiration listener paused")
+                    return  # Exit thread if Redis is down
                 except redis.exceptions.ResponseError:
                     app.logger.warning("⚠️ Redis keyspace notifications may need server config")
 
                 # Create a new connection for pub/sub (can't use the same connection)
-                pubsub_redis = redis.from_url(current_app.config['REDIS_URL'])
-                pubsub = pubsub_redis.pubsub()
+                try:
+                    pubsub_redis = redis.from_url(current_app.config['REDIS_URL'])
+                    pubsub = pubsub_redis.pubsub()
+                except redis.exceptions.ConnectionError:
+                    app.logger.warning("⚠️ Redis unavailable - expiration listener paused")
+                    return  # Exit thread if Redis is down
 
                 # Subscribe to key expiration events
                 pubsub.psubscribe('__keyevent@0__:expired')

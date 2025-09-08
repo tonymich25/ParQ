@@ -91,6 +91,12 @@ def redis_delete_lease(redis_client, key, value):
 def redis_safe_release_lease(redis_client, key, value):
     """Safe lease release using Lua script (atomic operation)"""
     try:
+        from config import socketio
+        redis_available = socketio.server.manager.redis_available
+
+        if not redis_available:
+            raise redis.RedisError("Redis circuit open - using fallback mode")
+
         result = lease_safe_release_script(keys=[key], args=[value])
         return result == 1
     except redis.RedisError as e:
@@ -209,15 +215,3 @@ def redis_keys(redis_client, pattern):
         print(f"Redis KEYS error for pattern {pattern}: {str(e)}")
         return []
 
-
-def redis_safe_release_lease(redis_client, key, value):
-    """Safe lease release using Lua script (atomic operation)"""
-    try:
-        result = lease_safe_release_script(keys=[key], args=[value])
-        return result == 1
-    except redis.RedisError as e:
-        print(f"Redis safe release error for key {key}: {str(e)}")
-        # Fallback to individual deletes
-        redis_client.delete(key)
-        redis_client.delete(f"lease_data:{value}")
-        return True

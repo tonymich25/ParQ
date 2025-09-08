@@ -1,13 +1,8 @@
 from datetime import datetime
-from sched import scheduler
-
-import redis
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from flask import current_app
-
-from booking import booking_service
-from config import app, PendingBooking, db, redis_client
+from config import app, PendingBooking, db, ActiveConnection
 
 
 def init_scheduler():
@@ -22,16 +17,16 @@ def init_scheduler():
         replace_existing=True
     )
 
-    # 🎯 ADD THIS - Redis recovery check every 30 seconds
+    # 🎯 ADD THIS: Clean up expired fallback connections every 5 minutes
     scheduler.add_job(
-        check_redis_recovery,
-        trigger=IntervalTrigger(seconds=30),
-        id='redis_recovery_check',
+        cleanup_expired_fallback_connections,
+        trigger=IntervalTrigger(minutes=5),
+        id='cleanup_fallback_connections',
         replace_existing=True
     )
 
     scheduler.start()
-    current_app.logger.info("✅ Background scheduler started with Redis recovery checks")
+    current_app.logger.info("✅ Background scheduler started")
 
 
 def cleanup_expired_pending_bookings():
@@ -46,19 +41,20 @@ def cleanup_expired_pending_bookings():
         current_app.logger.error(f"❌ Failed to clean up expired pending bookings: {str(e)}")
         db.session.rollback()
 
-# In scheduler.py or somewhere appropriate
-def check_redis_recovery():
-    if booking_service.redis_circuit_open:
-        try:
-            if redis_client.ping():
-                booking_service.redis_circuit_open = False  # Close circuit if Redis is back
-                current_app.logger.info("✅ Redis recovered! Circuit closed.")
-        except redis.exceptions.ConnectionError:
-            # Redis still down - circuit REMAINS open (no need to set it again)
-            current_app.logger.warning("🔴 Redis still down - circuit remains open")
-            # 🚨 REMOVE THIS LINE: booking_service.redis_circuit_open = True
 
-
+def cleanup_expired_fallback_connections():
+    """Clean up expired fallback connections"""
+    try:
+        with app.app_context():
+            expired_count = ActiveConnection.query.filter(
+                ActiveConnection.expires_at < datetime.now()
+            ).delete()
+            db.session.commit()
+            if expired_count > 0:
+                current_app.logger.info(f"🧹 Cleaned up {expired_count} expired fallback connections")
+    except Exception as e:
+        current_app.logger.error(f"❌ Failed to clean up expired fallback connections: {str(e)}")
+        db.session.rollback()
 
 # Call this during application startup
 init_scheduler()
