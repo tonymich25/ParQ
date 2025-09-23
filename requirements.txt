@@ -1,3 +1,4 @@
+alembic==1.16.2
 argon2-cffi==25.1.0
 argon2-cffi-bindings==21.2.0
 blinker==1.9.0
@@ -31,7 +32,7 @@ pycryptodome==3.11.0
 python-dotenv==1.1.1
 PyYAML==6.0.2
 qrcode==8.2
-requests==2.31.0
+requests==2.32.0
 shellescape==3.8.1
 SQLAlchemy==2.0.41
 stripe==12.3.0
@@ -47,5 +48,9 @@ tzdata
 gunicorn==21.2.0
 eventlet==0.33.3
 #gevent==24.2.1
-
 dnspython==2.3.0
+redis
+infisicalsdk
+tenacity==8.2.2
+apscheduler
+schedpy

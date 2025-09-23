@@ -1,6 +1,8 @@
 import os
 import stripe
-from dotenv import load_dotenv
+import redis
+from datetime import datetime, timedelta
+from infisical_sdk import InfisicalSDKClient
 from flask import Flask, url_for, render_template
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
@@ -10,16 +12,25 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
+from booking.redis.resilient_redis_manager import ResilientRedisManager
 
 app = Flask(__name__)
 
 # LOAD .ENV FILE
-load_dotenv()
+client = InfisicalSDKClient(
+        host="https://app.infisical.com",
+        token=os.environ.get("INFISICAL_TOKEN"))
+secrets_response = client.secrets.list_secrets(
+    project_id="20e67748-b5f9-42e9-913f-577ec194f3c7",
+    environment_slug="dev",
+    secret_path="/"
+)
+secrets = {secret.secretKey: secret.secretValue for secret in secrets_response.secrets}
 
 # SECRET KEY FOR FLASK FORMS
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-app.config['RECAPTCHA_PRIVATE_KEY'] = os.getenv('RECAPTCHA_PRIVATE_KEY')
-app.config['RECAPTCHA_PUBLIC_KEY'] = os.getenv('RECAPTCHA_PUBLIC_KEY')
+app.config['SECRET_KEY'] = secrets['SECRET_KEY']
+app.config['RECAPTCHA_PRIVATE_KEY'] = secrets['RECAPTCHA_PRIVATE_KEY']
+app.config['RECAPTCHA_PUBLIC_KEY'] = secrets['RECAPTCHA_PUBLIC_KEY']
 
 # Initialising Login Manager
 login_manager = LoginManager()
@@ -29,17 +40,35 @@ login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "warning"
 
 
-# STRIPE Init
-STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY')
-STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
+
+# Stripe Init
+STRIPE_PUBLIC_KEY = secrets['STRIPE_PUBLIC_KEY']
+STRIPE_SECRET_KEY = secrets['STRIPE_SECRET_KEY']
 stripe.api_key = STRIPE_SECRET_KEY
 
-socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
+# TODO Once deployed use actual link
+#socketio = SocketIO(app, cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"], async_mode='eventlet')
+
+app.config['REDIS_URL'] = secrets['REDIS_URL']
+redis_client = redis.from_url(app.config['REDIS_URL'])
+
+from booking.redis.redis_utils import init_redis_scripts
+init_redis_scripts(redis_client, app)
+
+socketio = SocketIO(
+        app,
+        cors_allowed_origins=["https://parqlive.com", "https://www.parqlive.com"],
+        async_mode='eventlet',
+        client_manager=ResilientRedisManager(url=app.config['REDIS_URL']),
+        logger=True,
+        engineio_logger=True,
+        manage_session=False
+)
 
 # DATABASE CONFIGURATION
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI')
-app.config['SQLALCHEMY_ECHO'] = True if os.getenv('SQLALCHEMY_ECHO') == 'True' else False
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True if os.getenv('SQLALCHEMY_TRACK_MODIFICATIONS') == 'True' else False
+app.config['SQLALCHEMY_DATABASE_URI'] = secrets['SQLALCHEMY_DATABASE_URI']
+app.config['SQLALCHEMY_ECHO'] = True if secrets['SQLALCHEMY_ECHO'] == 'True' else False
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True if secrets['SQLALCHEMY_TRACK_MODIFICATIONS'] == 'True' else False
 
 metadata = MetaData(
     naming_convention={
@@ -58,6 +87,7 @@ migrate = Migrate(app, db)
 @app.route('/health')
 def health():
     return "OK", 200
+
 
 @app.route('/')
 def index():
@@ -173,6 +203,72 @@ class ParkingSpot(db.Model, UserMixin):
     bookings = db.relationship('Booking', back_populates='parking_spot', lazy=True)
 
 
+class IdempotencyKey(db.Model):
+    __tablename__ = 'idempotency_keys'
+    key = db.Column(db.String(255), primary_key=True)
+    result = db.Column(db.JSON)  # Stores the response of the operation
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+class SpotLease(db.Model):
+    __tablename__ = 'spot_leases'
+    id = db.Column(db.Integer, primary_key=True)
+    spot_id = db.Column(db.Integer, db.ForeignKey('parking_spots.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    reservation_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
+    parking_lot_id = db.Column(db.Integer, nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    held_until = db.Column(db.DateTime, nullable=False)
+    processed = db.Column(db.Boolean, default=False)
+
+
+class PendingBooking(db.Model):
+    __tablename__ = 'pending_bookings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reservation_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    parking_lot_id = db.Column(db.Integer, nullable=False)
+    spot_id = db.Column(db.Integer, nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    expires_at = db.Column(db.DateTime, nullable=False)  # Cleanup timestamp
+
+    # Add index for faster lookups
+    __table_args__ = (
+        db.Index('idx_pending_reservation_id', 'reservation_id'),
+        db.Index('idx_pending_expires_at', 'expires_at'),
+        db.Index('idx_pending_user_id', 'user_id'),
+    )
+
+
+class ActiveConnection(db.Model):
+    """Stores connection info for Redis fallback"""
+    __tablename__ = 'active_connections_fallback'
+
+    id = db.Column(db.Integer, primary_key=True)
+    socket_id = db.Column(db.String(255), nullable=False, unique=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    room_name = db.Column(db.String(255), nullable=False)  # lot_1_2025-09-15
+    start_time = db.Column(db.String(10), nullable=False)  # HH:MM
+    end_time = db.Column(db.String(10), nullable=False)  # HH:MM
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)  # TTL for auto-cleanup
+
+    __table_args__ = (
+        db.Index('idx_ac_socket_id', 'socket_id'),
+        db.Index('idx_ac_room_name', 'room_name'),
+        db.Index('idx_ac_expires_at', 'expires_at'),
+    )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.expires_at = datetime.now() + timedelta(minutes=5)
 
 class MainIndexLink(MenuLink):
     def get_url(self):
@@ -188,14 +284,14 @@ class BookingView(ExtendedModelView):
     column_display_pk = True
     column_hide_backrefs = False
     column_list = ('id', 'userid', 'parking_lot_id', 'spot_id', 'timeBooked', 'bookingDate', 'startTime', 'endTime', 'amount', 'spot_id')
-    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if secrets['FLASK_ADMIN_FLUID_LAYOUT'] == 'True' else False
 
 
 class UserView(ExtendedModelView):
     column_display_pk = True
     column_hide_backrefs = False
     column_list = ('id', 'email', 'password', 'firstname', 'lastname', 'phone', 'role', 'bookings')
-    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if os.getenv('FLASK_ADMIN_FLUID_LAYOUT') == 'True' else False
+    app.config['FLASK_ADMIN_FLUID_LAYOUT'] = True if secrets['FLASK_ADMIN_FLUID_LAYOUT'] == 'True' else False
 
 
 admin = Admin(app, template_mode='bootstrap4')
@@ -208,8 +304,51 @@ admin.add_view(UserView(User, db.session))
 
 from accounts.views import accounts_bp, passwordHasher
 from dashboard.views import dashboard_bp
-from booking.views import booking_bp
+from booking.routes.views import booking_bp
 
 app.register_blueprint(accounts_bp)
 app.register_blueprint(dashboard_bp)
 app.register_blueprint(booking_bp)
+
+
+def startup():
+    try:
+        from booking.redis.redis_pubsub import start_redis_expiration_listener
+        from booking.non_redis_cross_instance_worker.cross_instance_manager import init_cross_instance_messaging
+
+        # Initialize cross-instance messaging
+        init_cross_instance_messaging()
+
+        # Try to start Redis listener (may fail if Redis is down)
+        try:
+            start_redis_expiration_listener()
+        except Exception as e:
+            app.logger.warning(f"Redis listener not started: {str(e)}")
+
+        app.logger.info("Application initialization complete")
+
+    except Exception as e:
+        app.logger.error(f"Application initialization failed: {str(e)}")
+
+
+
+def with_redis_circuit(func):
+    """Decorator to automatically handle Redis circuit breaker"""
+
+    def wrapper(*args, **kwargs):
+        global redis_circuit_open
+
+        if redis_circuit_open:
+            raise Exception("Redis circuit open - use fallback")
+
+        try:
+            return func(*args, **kwargs)
+        except redis.exceptions.ConnectionError:
+            # Open circuit on connection failure
+            redis_circuit_open = True
+            app.logger.warning("Redis connection failed - opening circuit")
+            raise Exception("Redis unavailable")
+
+    return wrapper
+
+startup()

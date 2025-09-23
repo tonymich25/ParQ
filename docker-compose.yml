@@ -2,17 +2,18 @@ version: '3.8'
 
 services:
   flask:
-    build: ./app/Car-Project
+    build: .
     container_name: parking_flask
     env_file: .env
     environment:
       - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
-      - PYTHONPATH=/app/Car-Project
+      - PYTHONPATH=.
+      - REDIS_URL=redis://redis:6379/0
     volumes:
-      - ./app/Car-Project:/app/Car-Project
-    working_dir: /app/Car-Project
-    expose:
-      - "5000"
+      - .:/app
+    working_dir: /app
+    ports:
+      - "5000:5000"
     restart: unless-stopped
     depends_on:
       - db
@@ -55,20 +56,33 @@ services:
       - app_network
     restart: unless-stopped
 
-  certbot:
-    image: certbot/certbot
-    container_name: parking_certbot
-#    ports:
-#      - "80:80"
+
+  redis:
+    image: redis:7-alpine
+    container_name: parking_redis
+    ports:
+      - "6379:6379"
     volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+      - redis_data:/data
+    command: redis-server --appendonly yes
     networks:
       - app_network
 
+#  certbot:
+#    image: certbot/certbot
+#    container_name: parking_certbot
+##    ports:
+##      - "80:80"
+#    volumes:
+#      - ./certbot/www:/var/www/certbot
+#      - ./certbot/conf:/etc/letsencrypt
+#    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+#    networks:
+#      - app_network
+
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   app_network:

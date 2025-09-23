@@ -13,6 +13,23 @@ map.addControl(new mapboxgl.GeolocateControl({
     },
 }));
 
+// Add these loading functions
+function showLoadingSpinner() {
+    const submitBtn = document.getElementById("submit-button");
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+    isSubmitting = true;
+}
+
+function hideLoadingSpinner() {
+    const submitBtn = document.getElementById("submit-button");
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = 'Confirm Booking';
+    isSubmitting = false;
+}
+
+
+
 document.addEventListener("DOMContentLoaded", function () {
     flatpickr("#bookingDate", {
         minDate: "today",
@@ -39,7 +56,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
         console.log("Time changed:", startTime, endTime);
         checkTimeValidity();
-        openWebSocketConnection(document.getElementById('parking-lot-select').value);
+
+        // 🎯 FIX: Only open WebSocket connection if we have all required data
+        const parkingLotId = document.getElementById('parking-lot-select').value;
+        const bookingDate = document.getElementById('bookingDate').value;
+
+        if (parkingLotId && bookingDate) {
+            openWebSocketConnection(parkingLotId);
+        }
+
         updateStepIndicator();
         updateSpotSummary();
 
@@ -120,6 +145,7 @@ function checkTimeValidity() {
     const endMinute = parseInt(document.querySelector('[name="endMinute"]').value);
     const endHour = parseInt(document.querySelector('[name="endHour"]').value);
     const errorDiv = document.getElementById("time-error");
+    const submitButton = document.getElementById("submit-button");
 
     let isValid = true;
     let errorMessage = "";
@@ -127,23 +153,29 @@ function checkTimeValidity() {
     if (!bookingDate) {
         isValid = false;
         errorMessage = "Please select a booking date.";
-    } else if (endHour < startHour) {
-        isValid = false;
-        errorMessage = "End time must be after start time.";
-    } else if (endHour === startHour && endMinute <= startMinute) {
-        isValid = false;
-        errorMessage = "End time must be after start time.";
+    } else {
+        // Convert to Date objects for proper comparison
+        const startTime = new Date(2000, 0, 1, startHour, startMinute);
+        const endTime = new Date(2000, 0, 1, endHour, endMinute);
+
+        if (endTime <= startTime) {
+            isValid = false;
+            errorMessage = "End time must be after start time.";
+        }
     }
 
     errorDiv.textContent = errorMessage;
-    document.getElementById("submit-button").disabled = !isValid;
+    submitButton.disabled = !isValid;
+
+    const spotSelected = document.getElementById("selected-spot-id").value !== "";
+    submitButton.disabled = !isValid || !spotSelected;
 
     const parkingLotId = document.getElementById("parking-lot-select").value;
     if (parkingLotId && isValid) {
         fetchSpotStatus();
     }
 
-    if (parkingLotId && bookingDate && startHour && endHour) {
+    if (parkingLotId && bookingDate && startHour !== undefined && endHour !== undefined) {
         displayRandomAIMessage();
     }
 
@@ -234,13 +266,18 @@ let socket = null;
 
 function openWebSocketConnection(parkingLotId) {
     const bookingDate = document.getElementById("bookingDate").value;
-    const startTime = document.querySelector('[name="startHour"]').value + ":" +
-                     document.querySelector('[name="startMinute"]').value;
-    const endTime = document.querySelector('[name="endHour"]').value + ":" +
-                   document.querySelector('[name="endMinute"]').value;
+    const startHour = document.querySelector('[name="startHour"]').value;
+    const startMinute = document.querySelector('[name="startMinute"]').value;
+    const endHour = document.querySelector('[name="endHour"]').value;
+    const endMinute = document.querySelector('[name="endMinute"]').value;
 
-    if (!bookingDate || !parkingLotId) return;
+    // Ensure we have valid values (use defaults if empty)
+    const startTime = startHour && startMinute ?
+        `${startHour.padStart(2, '0')}:${startMinute.padStart(2, '0')}` : '00:00';
+    const endTime = endHour && endMinute ?
+        `${endHour.padStart(2, '0')}:${endMinute.padStart(2, '0')}` : '23:59';
 
+    // If socket already exists and is connected, reuse it
     if (socket && socket.connected) {
         socket.emit('subscribe', {
             parkingLotId: parkingLotId,
@@ -251,32 +288,63 @@ function openWebSocketConnection(parkingLotId) {
         return;
     }
 
-    socket = io(window.location.origin);
+    // Only create new socket if none exists or it's disconnected
+    if (!socket || !socket.connected) {
+        socket = io(window.location.origin);
 
-    socket.on('connect', () => {
-        console.log('WebSocket connected, subscribing...');
-        socket.emit('subscribe', {
-            parkingLotId: parkingLotId,
-            bookingDate: bookingDate,
+        // Add all event listeners here ONCE
+        socket.on('connect', () => {
+            console.log('WebSocket connected, subscribing...');
+            socket.emit('subscribe', {
+                parkingLotId: parkingLotId,
+                bookingDate: bookingDate,
+                startTime: startTime,
+                endTime: endTime
+            });
         });
-    });
 
-    socket.on('spot_update', (data) => {
-        console.log('Spot update received:', data);
-        updateSpotAvailability(data.spotId, data.available);
-    });
+        socket.on('subscription_error', (data) => {
+            console.error('Subscription error:', data.message);
+        });
+        socket.on('spot_update', (data) => {
+            console.log('Spot update received:', data);
+            updateSpotAvailability(data.spotId, data.available);
+        });
+
+        socket.on('payment_redirect', (data) => {
+            window.location.href = data.url;
+        });
 
 
-    socket.on('payment_redirect', (data) => {
-        window.location.href = data.url;
-    });
+        socket.on('book_failed', (data) => {
+            isBooking = false;  // Reset booking state
 
-    socket.on('booking_failed', (data) => {
-        alert(`Booking failed: ${data.reason}`);
-        document.getElementById("submit-button").disabled = false;
-        document.getElementById("submit-button").innerHTML = 'Confirm Booking';
-    });
+            if (!data.success) {
+                alert(`Booking failed: ${data.reason}`);
+                document.getElementById("submit-button").disabled = false;
+                document.getElementById("submit-button").innerHTML = 'Confirm Booking';
+            }
+        });
+
+
+
+        // Listen for direct booking success
+        socket.on('booking_success', (data) => {
+            console.log('✅ Direct booking success:', data);
+            alert(data.message);
+            // Redirect to dashboard or show confirmation
+            window.location.href = '/dashboard';
+        });
+
+        // Listen for direct booking failure
+        socket.on('booking_failed', (data) => {
+            alert(data.reason);
+        });
+
+
+    }
 }
+
 
 function updateSpotAvailability(spotId, isAvailable) {
     console.log(`Updating spot ${spotId} to ${isAvailable ? 'available' : 'taken'}`);
@@ -323,6 +391,8 @@ function fetchSpotStatus() {
     const startTime = `${startHour}:${startMinute}`;
     const endTime = `${endHour}:${endMinute}`;
 
+    console.log("Fetching spot status with:", {parkingLotId, bookingDate, startTime, endTime});
+
     document.getElementById("parking-lot-container").style.display = "block";
     document.getElementById("parking-lot-status").className = "alert alert-info";
     document.getElementById("parking-lot-status").innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Checking availability...';
@@ -343,8 +413,13 @@ function fetchSpotStatus() {
         .then(response => response.json())
         .then(data => {
             renderParkingSpots(data);
-            updateStepIndicator();
-            updateSpotSummary();
+
+            if (socket && socket.connected) {
+                socket.emit('request_lease_updates', {
+                    parkingLotId: parkingLotId,
+                    bookingDate: bookingDate
+                });
+            }
         })
         .catch(error => {
             console.error("Error fetching spot status:", error);
@@ -418,7 +493,7 @@ function handleSpotClick(spotId) {
 
         const pricePerHour = 2;
         const hours = (parseInt(endHour) - parseInt(startHour)) +
-                     (parseInt(endMinute) - parseInt(startMinute)) / 60;
+            (parseInt(endMinute) - parseInt(startMinute)) / 60;
         const totalPrice = (pricePerHour * hours).toFixed(2);
 
         document.getElementById("summary-spot").textContent = `Spot #${spotId}`;
@@ -460,8 +535,16 @@ function zoomToCity(cityName) {
 }
 
 
+let isSubmitting = false;
+
 document.getElementById("booking-form").addEventListener("submit", function (e) {
     e.preventDefault();
+
+
+    if (isSubmitting) {
+        console.log("Already submitting, please wait...");
+        return;
+    }
 
     if (!socket || !socket.connected) {
         alert("Connection lost. Please refresh and try again.");
@@ -469,6 +552,7 @@ document.getElementById("booking-form").addEventListener("submit", function (e) 
     }
 
     try {
+        isSubmitting = true;
         const submitBtn = document.getElementById("submit-button");
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Booking...';
@@ -485,13 +569,23 @@ document.getElementById("booking-form").addEventListener("submit", function (e) 
         };
 
         socket.emit('book_spot', bookingMsg);
+
+        // Re-enable after 5 seconds if no response
+        setTimeout(() => {
+            isSubmitting = false;
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Confirm Booking';
+        }, 5000);
+
     } catch (err) {
         console.error("Booking error:", err);
         alert("Booking failed. Please try again.");
+        isSubmitting = false;
         document.getElementById("submit-button").disabled = false;
         document.getElementById("submit-button").innerHTML = 'Confirm Booking';
     }
 });
+
 
 const aiMessages = [
     "Most bookings for this location happen at around 9:30 AM daily",

@@ -1,7 +1,6 @@
-import os
-from config import app, socketio, db
-from flask import render_template
 import errors
+from config import app
+from flask import render_template
 
 # Registering errors
 app.register_error_handler(400, errors.bad_request)
@@ -16,21 +15,6 @@ app.register_error_handler(503, errors.service_unavailable)
 app.register_error_handler(504, errors.gateway_timeout)
 
 
-if __name__ == '__main__':
-    if os.environ.get('FLASK_ENV') == 'development':
-        socketio.run(
-            app,
-            debug=True,
-            host='0.0.0.0',
-            port=5000,
-            allow_unsafe_werkzeug=True  # Bypass warning for development
-        )
-        # Production mode: Use a proper WSGI server (like Gunicorn)
-    else:
-        socketio.run(
-            app,
-            host='0.0.0.0',
-            port=5000,
-            debug=False,
-            log_output=True
-        )
+@app.route('/')
+def index():
+    return render_template('index.html')
