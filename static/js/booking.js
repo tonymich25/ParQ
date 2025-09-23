@@ -13,6 +13,23 @@ map.addControl(new mapboxgl.GeolocateControl({
     },
 }));
 
+// Add these loading functions
+function showLoadingSpinner() {
+    const submitBtn = document.getElementById("submit-button");
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+    isSubmitting = true;
+}
+
+function hideLoadingSpinner() {
+    const submitBtn = document.getElementById("submit-button");
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = 'Confirm Booking';
+    isSubmitting = false;
+}
+
+
+
 document.addEventListener("DOMContentLoaded", function () {
     flatpickr("#bookingDate", {
         minDate: "today",
@@ -33,26 +50,26 @@ document.addEventListener("DOMContentLoaded", function () {
     const endMinuteSelect = document.querySelector('select[name="endMinute"]');
 
 
-function onTimeChange() {
-    const startTime = startHourSelect.value + ':' + startMinuteSelect.value;
-    const endTime = endHourSelect.value + ':' + endMinuteSelect.value;
+    function onTimeChange() {
+        const startTime = startHourSelect.value + ':' + startMinuteSelect.value;
+        const endTime = endHourSelect.value + ':' + endMinuteSelect.value;
 
-    console.log("Time changed:", startTime, endTime);
-    checkTimeValidity();
+        console.log("Time changed:", startTime, endTime);
+        checkTimeValidity();
 
-    // 🎯 FIX: Only open WebSocket connection if we have all required data
-    const parkingLotId = document.getElementById('parking-lot-select').value;
-    const bookingDate = document.getElementById('bookingDate').value;
+        // 🎯 FIX: Only open WebSocket connection if we have all required data
+        const parkingLotId = document.getElementById('parking-lot-select').value;
+        const bookingDate = document.getElementById('bookingDate').value;
 
-    if (parkingLotId && bookingDate) {
-        openWebSocketConnection(parkingLotId);
+        if (parkingLotId && bookingDate) {
+            openWebSocketConnection(parkingLotId);
+        }
+
+        updateStepIndicator();
+        updateSpotSummary();
+
+        document.getElementById('summary-time').textContent = startTime + ' - ' + endTime;
     }
-
-    updateStepIndicator();
-    updateSpotSummary();
-
-    document.getElementById('summary-time').textContent = startTime + ' - ' + endTime;
-}
 
     startHourSelect.addEventListener('change', onTimeChange);
     startMinuteSelect.addEventListener('change', onTimeChange);
@@ -150,7 +167,6 @@ function checkTimeValidity() {
     errorDiv.textContent = errorMessage;
     submitButton.disabled = !isValid;
 
-    // 🎯 ALSO disable if no spot is selected
     const spotSelected = document.getElementById("selected-spot-id").value !== "";
     submitButton.disabled = !isValid || !spotSelected;
 
@@ -300,15 +316,30 @@ function openWebSocketConnection(parkingLotId) {
         });
 
 
-	socket.on('book_failed', (data) => {
-    	    isBooking = false;  // Reset booking state
+        socket.on('book_failed', (data) => {
+            isBooking = false;  // Reset booking state
 
-    	    if (!data.success) {
+            if (!data.success) {
                 alert(`Booking failed: ${data.reason}`);
                 document.getElementById("submit-button").disabled = false;
                 document.getElementById("submit-button").innerHTML = 'Confirm Booking';
-    	    }
-	});
+            }
+        });
+
+
+
+        // Listen for direct booking success
+        socket.on('booking_success', (data) => {
+            console.log('✅ Direct booking success:', data);
+            alert(data.message);
+            // Redirect to dashboard or show confirmation
+            window.location.href = '/dashboard';
+        });
+
+        // Listen for direct booking failure
+        socket.on('booking_failed', (data) => {
+            alert(data.reason);
+        });
 
 
     }
@@ -360,7 +391,7 @@ function fetchSpotStatus() {
     const startTime = `${startHour}:${startMinute}`;
     const endTime = `${endHour}:${endMinute}`;
 
-    console.log("Fetching spot status with:", { parkingLotId, bookingDate, startTime, endTime });
+    console.log("Fetching spot status with:", {parkingLotId, bookingDate, startTime, endTime});
 
     document.getElementById("parking-lot-container").style.display = "block";
     document.getElementById("parking-lot-status").className = "alert alert-info";
@@ -380,18 +411,16 @@ function fetchSpotStatus() {
         })
     })
         .then(response => response.json())
-.then(data => {
-        renderParkingSpots(data);
+        .then(data => {
+            renderParkingSpots(data);
 
-        // 🎯 FIX: After rendering, check for real-time lease updates
-        // If we have an active socket connection, request latest lease status
-        if (socket && socket.connected) {
-            socket.emit('request_lease_updates', {
-                parkingLotId: parkingLotId,
-                bookingDate: bookingDate
-            });
-        }
-    })
+            if (socket && socket.connected) {
+                socket.emit('request_lease_updates', {
+                    parkingLotId: parkingLotId,
+                    bookingDate: bookingDate
+                });
+            }
+        })
         .catch(error => {
             console.error("Error fetching spot status:", error);
             document.getElementById("parking-lot-status").className = "alert alert-danger";
@@ -464,7 +493,7 @@ function handleSpotClick(spotId) {
 
         const pricePerHour = 2;
         const hours = (parseInt(endHour) - parseInt(startHour)) +
-                     (parseInt(endMinute) - parseInt(startMinute)) / 60;
+            (parseInt(endMinute) - parseInt(startMinute)) / 60;
         const totalPrice = (pricePerHour * hours).toFixed(2);
 
         document.getElementById("summary-spot").textContent = `Spot #${spotId}`;
@@ -506,13 +535,10 @@ function zoomToCity(cityName) {
 }
 
 
-
 let isSubmitting = false;
 
 document.getElementById("booking-form").addEventListener("submit", function (e) {
     e.preventDefault();
-
-
 
 
     if (isSubmitting) {
