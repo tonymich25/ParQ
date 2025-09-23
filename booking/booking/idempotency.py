@@ -1,4 +1,4 @@
-from flask import jsonify, current_app
+from flask import current_app
 from config import db, IdempotencyKey
 
 def check_idempotency(key):

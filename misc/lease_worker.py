@@ -1,9 +1,9 @@
 import time
 import logging
 from sqlalchemy import text
-from booking.views import emit_to_relevant_rooms_about_booking
+from booking.routes.views import emit_to_relevant_rooms_about_booking
 from config import app, db, ParkingSpot
-from booking.redis_utils import redis_delete_lease
+from booking.redis.redis_utils import redis_delete_lease
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

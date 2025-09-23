@@ -2,7 +2,7 @@ import time
 import logging
 from sqlalchemy import text
 from config import db, app, ParkingSpot
-from booking.views import emit_to_relevant_rooms_about_booking
+from booking.routes.views import emit_to_relevant_rooms_about_booking
 
 
 logging.basicConfig(level=logging.INFO)

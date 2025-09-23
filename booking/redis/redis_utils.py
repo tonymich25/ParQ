@@ -47,7 +47,7 @@ def init_redis_scripts(redis_client, app):
         lease_acquire_script = redis_client.register_script(LEASE_ACQUIRE_SCRIPT)
         lease_renew_script = redis_client.register_script(LEASE_RENEW_SCRIPT)
         lease_delete_script = redis_client.register_script(LEASE_DELETE_SCRIPT)
-        lease_safe_release_script = redis_client.register_script(LEASE_SAFE_RELEASE_SCRIPT)  # ADD THIS
+        lease_safe_release_script = redis_client.register_script(LEASE_SAFE_RELEASE_SCRIPT)
         app.logger.info("Redis scripts registered successfully")
     except Exception as e:
         app.logger.error(f"Failed to register Redis scripts: {str(e)}")
@@ -60,14 +60,14 @@ def redis_acquire_lease(redis_client, key, value, ttl):
         result = lease_acquire_script(keys=[key], args=[value, ttl])
         print(f"   Redis SET result: {result}")
         if result is None:
-            return False  # Lease already exists
+            return False
         elif result == b'OK' or result == 'OK':
-            return True  # Lease acquired successfully
+            return True
         else:
-            print(f"❌ Unexpected Redis response: {result}")
+            print(f"Unexpected Redis response: {result}")
             return False
     except redis.RedisError as e:
-        print(f"❌ Redis lease acquire error for key {key}: {str(e)}")
+        print(f"Redis lease acquire error for key {key}: {str(e)}")
         return False
 
 
@@ -181,7 +181,6 @@ def redis_hgetall(key):
                     # Try to decode as JSON first
                     decoded_result[key_str] = json.loads(v.decode('utf-8'))
                 except json.JSONDecodeError:
-                    # Fallback to string decoding
                     decoded_result[key_str] = v.decode('utf-8')
             else:
                 decoded_result[key_str] = v

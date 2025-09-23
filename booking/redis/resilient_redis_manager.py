@@ -17,8 +17,7 @@ class ResilientRedisManager(RedisManager):
             try:
                 if not self.redis_available:
                     logger.warning("Redis unavailable - sleeping before retry")
-                    time.sleep(30)  # Wait 30 seconds before retrying
-
+                    time.sleep(30)
                 # Try to use Redis normally
                 for message in super()._listen():
                     yield message
@@ -29,7 +28,7 @@ class ResilientRedisManager(RedisManager):
                 if self.redis_available:
                     logger.error("Redis connection lost - entering fallback mode")
                     self.redis_available = False
-                time.sleep(5)  # Short sleep before retry
+                time.sleep(5)
 
             except Exception as e:
                 logger.error(f"Unexpected error in Redis listener: {e}")

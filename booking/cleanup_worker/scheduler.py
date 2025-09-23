@@ -9,7 +9,6 @@ def init_scheduler():
     """Initialize background scheduler for cleanup tasks"""
     scheduler = BackgroundScheduler()
 
-    # Clean up expired pending bookings every hour
     scheduler.add_job(
         cleanup_expired_pending_bookings,
         trigger=IntervalTrigger(hours=1),
@@ -17,7 +16,6 @@ def init_scheduler():
         replace_existing=True
     )
 
-    # 🎯 ADD THIS: Clean up expired fallback connections every 5 minutes
     scheduler.add_job(
         cleanup_expired_fallback_connections,
         trigger=IntervalTrigger(minutes=5),
@@ -26,7 +24,7 @@ def init_scheduler():
     )
 
     scheduler.start()
-    current_app.logger.info("✅ Background scheduler started")
+    current_app.logger.info("Background scheduler started")
 
 
 def cleanup_expired_pending_bookings():
@@ -36,9 +34,9 @@ def cleanup_expired_pending_bookings():
             expired_count = PendingBooking.query.filter(PendingBooking.expires_at < datetime.now()).delete()
             db.session.commit()
             if expired_count > 0:
-                current_app.logger.info(f"🧹 Cleaned up {expired_count} expired pending bookings")
+                current_app.logger.info(f"Cleaned up {expired_count} expired pending bookings")
     except Exception as e:
-        current_app.logger.error(f"❌ Failed to clean up expired pending bookings: {str(e)}")
+        current_app.logger.error(f"Failed to clean up expired pending bookings: {str(e)}")
         db.session.rollback()
 
 
@@ -51,10 +49,9 @@ def cleanup_expired_fallback_connections():
             ).delete()
             db.session.commit()
             if expired_count > 0:
-                current_app.logger.info(f"🧹 Cleaned up {expired_count} expired fallback connections")
+                current_app.logger.info(f"Cleaned up {expired_count} expired fallback connections")
     except Exception as e:
-        current_app.logger.error(f"❌ Failed to clean up expired fallback connections: {str(e)}")
+        current_app.logger.error(f"Failed to clean up expired fallback connections: {str(e)}")
         db.session.rollback()
 
-# Call this during application startup
 init_scheduler()

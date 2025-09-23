@@ -1,9 +1,9 @@
 import os
 import stripe
 import redis
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from infisical_sdk import InfisicalSDKClient
-from flask import Flask, url_for, render_template, current_app
+from flask import Flask, url_for, render_template
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.menu import MenuLink
@@ -12,7 +12,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin, LoginManager, current_user
 from flask_migrate import Migrate
 from sqlalchemy import MetaData
-from booking.resilient_redis_manager import ResilientRedisManager
+from booking.redis.resilient_redis_manager import ResilientRedisManager
 
 app = Flask(__name__)
 
@@ -41,7 +41,7 @@ login_manager.login_message_category = "warning"
 
 
 
-# STRIPE INIT
+# Stripe Init
 STRIPE_PUBLIC_KEY = secrets['STRIPE_PUBLIC_KEY']
 STRIPE_SECRET_KEY = secrets['STRIPE_SECRET_KEY']
 stripe.api_key = STRIPE_SECRET_KEY
@@ -52,7 +52,7 @@ stripe.api_key = STRIPE_SECRET_KEY
 app.config['REDIS_URL'] = secrets['REDIS_URL']
 redis_client = redis.from_url(app.config['REDIS_URL'])
 
-from booking.redis_utils import init_redis_scripts
+from booking.redis.redis_utils import init_redis_scripts
 init_redis_scripts(redis_client, app)
 
 socketio = SocketIO(
@@ -304,7 +304,7 @@ admin.add_view(UserView(User, db.session))
 
 from accounts.views import accounts_bp, passwordHasher
 from dashboard.views import dashboard_bp
-from booking.views import booking_bp
+from booking.routes.views import booking_bp
 
 app.register_blueprint(accounts_bp)
 app.register_blueprint(dashboard_bp)
@@ -313,8 +313,8 @@ app.register_blueprint(booking_bp)
 
 def startup():
     try:
-        from booking.redis_pubsub import start_redis_expiration_listener
-        from booking.cross_instance_manager import init_cross_instance_messaging
+        from booking.redis.redis_pubsub import start_redis_expiration_listener
+        from booking.non_redis_cross_instance_worker.cross_instance_manager import init_cross_instance_messaging
 
         # Initialize cross-instance messaging
         init_cross_instance_messaging()
@@ -323,12 +323,12 @@ def startup():
         try:
             start_redis_expiration_listener()
         except Exception as e:
-            app.logger.warning(f"⚠️ Redis listener not started: {str(e)}")
+            app.logger.warning(f"Redis listener not started: {str(e)}")
 
-        app.logger.info("✅ Application initialization complete")
+        app.logger.info("Application initialization complete")
 
     except Exception as e:
-        app.logger.error(f"❌ Application initialization failed: {str(e)}")
+        app.logger.error(f"Application initialization failed: {str(e)}")
 
 
 
@@ -346,7 +346,7 @@ def with_redis_circuit(func):
         except redis.exceptions.ConnectionError:
             # Open circuit on connection failure
             redis_circuit_open = True
-            app.logger.warning("🔌 Redis connection failed - opening circuit")
+            app.logger.warning("Redis connection failed - opening circuit")
             raise Exception("Redis unavailable")
 
     return wrapper
